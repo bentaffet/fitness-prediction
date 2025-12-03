@@ -2,54 +2,121 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Strava OAuth Integration</title>
+  <title>Strava Integration</title>
   <style>
-    body { font-family: Arial; padding: 40px; max-width: 600px; margin: auto; text-align: center; }
-    button { background-color: #fc4c02; color: white; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; }
-    button:hover { background-color: #e03d00; }
-    pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; margin-top: 20px; overflow-x: auto; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      max-width: 700px;
+      margin: auto;
+      text-align: center;
+    }
+    button {
+      background-color: #fc4c02;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 5px;
+      margin: 10px 0;
+    }
+    button:hover {
+      background-color: #e03d00;
+    }
+    pre {
+      text-align: left;
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 5px;
+      overflow-x: auto;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
   <h1>Connect Your Strava Account</h1>
-  <p>Click below to authorize Strava and send your code to our database.</p>
+  <p>Click the button below to authorize Strava and send your code to our database.</p>
 
-  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
+  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity:read_all&response_type=code">
     <button>Connect with Strava</button>
   </a>
 
   <div id="status"></div>
-  <pre id="debug"></pre>
+  <button id="fetch-runs-btn" style="display:none;">Fetch My Last Runs</button>
+  <pre id="runs-output"></pre>
 
   <script>
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("runs-output");
+    const fetchBtn = document.getElementById("fetch-runs-btn");
+
     async function sendCodeToBackend(code, user_name) {
-      const statusEl = document.getElementById("status");
-      const debugEl = document.getElementById("debug");
-      statusEl.textContent = "Sending code to backend...";
+      statusEl.textContent = "Sending authorization code to backend...";
       try {
         const res = await fetch("/api/store-code", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code, user_name })
         });
-        let data;
-        try { data = await res.json(); } catch (err) { data = await res.text(); }
-        debugEl.textContent = JSON.stringify(data, null, 2);
-        if (res.ok) statusEl.textContent = `✅ Authorization code stored for user "${user_name}"`;
-        else statusEl.textContent = "❌ Failed to store code.";
+        const data = await res.json();
+        if (res.ok) {
+          statusEl.textContent = "✅ Code stored successfully!";
+          fetchBtn.style.display = "inline-block"; // show fetch button
+        } else {
+          statusEl.textContent = "❌ Failed to store code.";
+          console.error(data);
+        }
       } catch (err) {
         statusEl.textContent = "❌ Error sending code.";
-        debugEl.textContent = err.message;
+        console.error(err);
       }
     }
 
+    async function fetchRuns(user_name, max_runs=5) {
+      outputEl.textContent = "Fetching last runs...";
+      try {
+        const res = await fetch("/api/fetch-runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_name, max_runs })
+        });
+
+        const data = await res.json();
+        if (res.ok || data.activities) {
+          const filtered = data.activities.map(act => ({
+            id: act.id,
+            name: act.name,
+            type: act.type.toLowerCase(),
+            distance_m: act.distance,
+            moving_time_s: act.moving_time,
+            elapsed_time_s: act.elapsed_time,
+            start_date: act.start_date,
+            average_heartrate: act.average_heartrate,
+            max_heartrate: act.max_heartrate
+          }));
+          outputEl.textContent = JSON.stringify(filtered, null, 2);
+        } else {
+          outputEl.textContent = "❌ Failed to fetch runs: " + JSON.stringify(data);
+        }
+      } catch (err) {
+        outputEl.textContent = "❌ Error fetching runs: " + err.message;
+      }
+    }
+
+    // Check if Strava redirected with a code
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
+
+    // Replace this with the actual username (or dynamically get it)
+    const user_name = "ben_taffet";
+
     if (code) {
-      const user_name = "ben_taffet"; // replace with dynamic username if needed
       console.log("Found Strava code:", code);
       sendCodeToBackend(code, user_name);
     }
+
+    fetchBtn.addEventListener("click", () => fetchRuns(user_name));
   </script>
 </body>
 </html>
