@@ -2,136 +2,124 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Strava Fitness Analysis</title>
+  <title>Strava Example Analysis</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: Arial; max-width: 800px; margin: 40px auto; text-align: center; }
-    button { background: #fc4c02; color: white; border: none; padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px 0; }
-    button:hover { background: #e03d00; }
-    pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
-    canvas { margin-top: 30px; }
+    canvas { margin-top: 20px; }
   </style>
 </head>
 <body>
-  <h1>Strava Fitness/Fatigue Analysis</h1>
-  <p>Authorize Strava and analyze your runs.</p>
-
-  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
-    <button>Connect with Strava</button>
-  </a>
-
-  <div id="status"></div>
-  <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
-  <pre id="runs-output"></pre>
+  <h1>Example Strava Analysis</h1>
+  <p>Showing modeled fitness based on 5 example runs.</p>
+  
+  <pre id="json-output"></pre>
   <canvas id="fitness-chart" width="700" height="400"></canvas>
 
   <script>
-    const statusEl = document.getElementById("status");
-    const outputEl = document.getElementById("runs-output");
-    const fetchBtn = document.getElementById("fetch-runs-btn");
+    // 5 example activities
+    const activities = [
+      { id:1, name:"Run 1", distance_m:5000, moving_time_s:1500, average_heartrate:150 },
+      { id:2, name:"Run 2", distance_m:8000, moving_time_s:2300, average_heartrate:155 },
+      { id:3, name:"Run 3", distance_m:6000, moving_time_s:1800, average_heartrate:null },
+      { id:4, name:"Run 4", distance_m:10000, moving_time_s:2700, average_heartrate:160 },
+      { id:5, name:"Run 5", distance_m:7000, moving_time_s:2000, average_heartrate:null }
+    ];
+
+    // --- Helper: z-score ---
+    function zscore(arr) {
+      const mean = arr.reduce((sum,v)=>sum+v,0)/arr.length;
+      const std = Math.sqrt(arr.reduce((sum,v)=>sum+(v-mean)**2,0)/arr.length);
+      return arr.map(v => isNaN(v) ? 0 : (v-mean)/std);
+    }
+
+    // --- Process activities ---
+    const runs = activities.map(run => {
+      const distance_miles = run.distance_m * 0.000621371;
+      const average_pace = run.moving_time_s / 60 / distance_miles; // min/mile
+      const average_heartrate = run.average_heartrate ?? 150; // fallback
+      return {...run, distance_miles, average_pace, average_heartrate};
+    });
+
+    const z_pace = zscore(runs.map(r=>r.average_pace));
+    const z_hr = zscore(runs.map(r=>r.average_heartrate));
+    const S_FF = runs.map((r,i)=>-(z_pace[i]+z_hr[i])/2);
+    const z_TMM = zscore(runs.map(r=>r.distance_miles));
+    const trainingload = z_TMM.map((t,i)=>t*(1-S_FF[i]));
+
+    // --- Grid search for best fit/fat ---
+    const fitlist = [0.7,0.75,0.8];
+    const fatlist = [0.3,0.35,0.4];
+    let best_R2=-Infinity, best_fit=null, best_fat=null;
+
+    function regress(y,x1,x2){
+      const n=y.length;
+      let sumY=0,sumX1=0,sumX2=0,sumX1X1=0,sumX2X2=0,sumX1X2=0,sumY_X1=0,sumY_X2=0;
+      for(let i=0;i<n;i++){
+        sumY+=y[i]; sumX1+=x1[i]; sumX2+=x2[i];
+        sumX1X1+=x1[i]*x1[i]; sumX2X2+=x2[i]*x2[i]; sumX1X2+=x1[i]*x2[i];
+        sumY_X1+=y[i]*x1[i]; sumY_X2+=y[i]*x2[i];
+      }
+      const denom=sumX1X1*sumX2X2 - sumX1X2**2;
+      if(denom===0) return 0;
+      const b1=(sumY_X1*sumX2X2 - sumY_X2*sumX1X2)/denom;
+      const b2=(sumY_X2*sumX1X1 - sumY_X1*sumX1X2)/denom;
+      const yhat = y.map((v,i)=>b1*x1[i]+b2*x2[i]);
+      const ssr = yhat.reduce((s,v,i)=>s+(v-y[i])**2,0);
+      const sst = y.reduce((s,v)=>s+(v-(sumY/n))**2,0);
+      return 1-ssr/sst;
+    }
+
+    let fit_tmp=[], fat_tmp=[];
+    for(let df of fitlist){
+      for(let da of fatlist){
+        fit_tmp[0]=trainingload[0]; fat_tmp[0]=trainingload[0];
+        for(let i=1;i<trainingload.length;i++){
+          fit_tmp[i]=trainingload[i]+df*fit_tmp[i-1];
+          fat_tmp[i]=trainingload[i]+da*fat_tmp[i-1];
+        }
+        const R2val = regress(S_FF,fit_tmp,fat_tmp);
+        if(R2val>best_R2){ best_R2=R2val; best_fit=df; best_fat=da; }
+      }
+    }
+
+    // --- Compute modeled fitness ---
+    fit_tmp[0]=trainingload[0]; fat_tmp[0]=trainingload[0];
+    const modeledfitness=[];
+    for(let i=1;i<trainingload.length;i++){
+      fit_tmp[i]=trainingload[i]+best_fit*fit_tmp[i-1];
+      fat_tmp[i]=trainingload[i]+best_fat*fat_tmp[i-1];
+    }
+    for(let i=0;i<trainingload.length;i++){
+      modeledfitness[i]=fit_tmp[i]+fat_tmp[i]; // simplified
+    }
+
+    const result = {
+      activities: runs,
+      S_FF,
+      trainingload,
+      modeledfitness,
+      best_fit,
+      best_fat,
+      R2: best_R2
+    };
+
+    document.getElementById("json-output").textContent = JSON.stringify(result, null, 2);
+
+    // --- Plot ---
     const ctx = document.getElementById("fitness-chart").getContext("2d");
-    let fitnessChart;
-
-    const user_name = "ben_taffet"; // replace with dynamic logic if needed
-
-    async function sendCodeToBackend(code) {
-      statusEl.textContent = "Sending code to backend...";
-      try {
-        const res = await fetch("/api/store-code", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, user_name })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          statusEl.textContent = "✅ Code stored successfully!";
-          fetchBtn.style.display = "inline-block";
-        } else {
-          statusEl.textContent = "❌ Failed to store code.";
-          outputEl.textContent = JSON.stringify(data, null, 2);
-        }
-      } catch (err) {
-        statusEl.textContent = "❌ Error sending code.";
-        outputEl.textContent = err.message;
-      }
-    }
-
-    async function fetchRuns(max_runs = 50) {
-      outputEl.textContent = "Fetching last runs...";
-      try {
-        const res = await fetch("/api/fetch-runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_name, max_runs })
-        });
-        const data = await res.json();
-        if (res.ok && data.activities) {
-          outputEl.textContent = JSON.stringify(data.activities, null, 2);
-          analyzeRuns(data.activities);
-        } else {
-          outputEl.textContent = "❌ Failed to fetch runs: " + JSON.stringify(data, null, 2);
-        }
-      } catch (err) {
-        outputEl.textContent = "❌ Error fetching runs: " + err.message;
-      }
-    }
-
-    async function analyzeRuns(activities) {
-      statusEl.textContent = "Analyzing runs...";
-      try {
-        const res = await fetch("/api/analyze-runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ activities })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          statusEl.textContent = "✅ Analysis complete!";
-          outputEl.textContent = JSON.stringify(data, null, 2);
-
-          // Plot modeled fitness vs week
-          const labels = activities
-            .filter(a => a.type === "run")
-            .map((a, i) => `Run ${i+1}`);
-          const modeledFitness = data.modeledfitness;
-
-          if (fitnessChart) fitnessChart.destroy();
-          fitnessChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels,
-              datasets: [{
-                label: 'Modeled Fitness',
-                data: modeledFitness,
-                borderColor: 'rgba(252,76,2,1)',
-                backgroundColor: 'rgba(252,76,2,0.2)',
-                fill: true,
-                tension: 0.2
-              }]
-            },
-            options: {
-              responsive: true,
-              scales: {
-                x: { title: { display: true, text: 'Run' } },
-                y: { title: { display: true, text: 'Modeled Fitness' } }
-              }
-            }
-          });
-
-        } else {
-          outputEl.textContent = "❌ Analysis failed: " + JSON.stringify(data, null, 2);
-        }
-      } catch (err) {
-        outputEl.textContent = "❌ Error analyzing runs: " + err.message;
-      }
-    }
-
-    // Check for Strava redirect code
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    if (code) sendCodeToBackend(code);
-
-    fetchBtn.addEventListener("click", () => fetchRuns());
+    new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: runs.map(r=>r.name),
+        datasets:[
+          { label:"S_FF", data: S_FF, borderColor:"red", fill:false },
+          { label:"Training Load", data: trainingload, borderColor:"blue", fill:false },
+          { label:"Modeled Fitness", data: modeledfitness, borderColor:"green", fill:false }
+        ]
+      },
+      options: { responsive:true, plugins:{legend:{position:"top"}} }
+    });
   </script>
 </body>
 </html>
