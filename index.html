@@ -57,7 +57,13 @@
           body: JSON.stringify({ code })
         });
 
-        const data = await res.json();
+        let data;
+        try {
+          data = await res.json();
+        } catch (err) {
+          data = await res.text(); // fallback to raw text
+          console.error("Backend response was not JSON:", data);
+        }
         debugEl.textContent = JSON.stringify(data, null, 2);
 
         if (res.ok) {
