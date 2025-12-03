@@ -24,26 +24,42 @@ export default async function handler(req, res) {
       ssl: { rejectUnauthorized: false },
     });
 
-    // 2️⃣ Fetch Strava tokens for this user
+    // 2️⃣ Fetch the latest Strava code for this user
     const [rows] = await connection.execute(
-      "SELECT access_token FROM strava_tokens WHERE user_name = ? ORDER BY id DESC LIMIT 1",
+      "SELECT code FROM strava_tokens WHERE user_name = ? ORDER BY id DESC LIMIT 1",
       [user_name]
     );
     await connection.end();
 
     if (!rows.length) {
-      return res.status(404).json({ error: "No tokens found for user" });
+      return res.status(404).json({ error: "No Strava code found for user" });
     }
 
-    const access_token = rows[0].access_token;
+    const code = rows[0].code;
 
-    // 3️⃣ Fetch activities from Strava
+    // 3️⃣ Exchange code for access token
+    const tokenRes = await axios.post(
+      "https://www.strava.com/oauth/token",
+      null,
+      {
+        params: {
+          client_id: process.env.STRAVA_CLIENT_ID,
+          client_secret: process.env.STRAVA_CLIENT_SECRET,
+          code,
+          grant_type: "authorization_code",
+        },
+      }
+    );
+
+    const access_token = tokenRes.data.access_token;
+
+    // 4️⃣ Fetch activities from Strava
     const stravaRes = await axios.get(
       `https://www.strava.com/api/v3/athlete/activities?per_page=${limit}`,
       { headers: { Authorization: `Bearer ${access_token}` } }
     );
 
-    // 4️⃣ Map only the fields we want
+    // 5️⃣ Map only the fields we want
     const activities = stravaRes.data.map(act => ({
       id: act.id,
       name: act.name,
@@ -59,7 +75,10 @@ export default async function handler(req, res) {
     return res.status(200).json({ activities });
 
   } catch (err) {
-    console.error("Error in fetch-runs:", err);
-    return res.status(500).json({ error: "Server error", details: err.message || String(err) });
+    console.error("Error in fetch-runs:", err.response?.data || err.message || err);
+    return res.status(500).json({
+      error: "Server error",
+      details: err.response?.data || err.message || String(err),
+    });
   }
 }
