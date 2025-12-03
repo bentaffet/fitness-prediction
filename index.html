@@ -1,90 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Strava OAuth Integration</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 40px;
-      max-width: 600px;
-      margin: auto;
-      text-align: center;
-    }
-    button {
-      background-color: #fc4c02;
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      font-size: 16px;
-      cursor: pointer;
-      border-radius: 5px;
-    }
-    button:hover {
-      background-color: #e03d00;
-    }
-    pre {
-      text-align: left;
-      background: #f5f5f5;
-      padding: 15px;
-      border-radius: 5px;
-      overflow-x: auto;
-      margin-top: 20px;
-    }
-  </style>
-</head>
-<body>
+<script>
+async function sendCodeToBackend(code, user_name) {
+  const statusEl = document.getElementById("status");
+  const debugEl = document.getElementById("debug");
+  statusEl.textContent = "Sending code to backend...";
 
-  <h1>Connect Your Strava Account</h1>
-  <p>Click the button below to authorize Strava and send your authorization code to our database.</p>
+  try {
+    const res = await fetch("/api/store-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, user_name })
+    });
 
-  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
-    <button>Connect with Strava</button>
-  </a>
-
-  <div id="status"></div>
-  <pre id="debug"></pre>
-
-  <script>
-    async function sendCodeToBackend(code) {
-      const statusEl = document.getElementById("status");
-      const debugEl = document.getElementById("debug");
-      statusEl.textContent = "Sending code to backend...";
-      try {
-        const res = await fetch("/api/store-code", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code })
-        });
-
-        let data;
-        try {
-          data = await res.json();
-        } catch (err) {
-          data = await res.text(); // fallback to raw text
-          console.error("Backend response was not JSON:", data);
-        }
-        debugEl.textContent = JSON.stringify(data, null, 2);
-
-        if (res.ok) {
-          statusEl.textContent = "✅ Authorization code stored successfully!";
-        } else {
-          statusEl.textContent = "❌ Failed to store code.";
-        }
-      } catch (err) {
-        statusEl.textContent = "❌ Error sending code.";
-        debugEl.textContent = err.message;
-      }
+    let data;
+    try {
+      data = await res.json();
+    } catch (err) {
+      data = await res.text();
     }
 
-    // Check for Strava redirect code
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
+    debugEl.textContent = JSON.stringify(data, null, 2);
 
-    if (code) {
-      console.log("Found Strava code:", code);
-      sendCodeToBackend(code);
+    if (res.ok) {
+      statusEl.textContent = `✅ Authorization code stored for user "${user_name}"`;
+    } else {
+      statusEl.textContent = "❌ Failed to store code.";
     }
-  </script>
-</body>
-</html>
+  } catch (err) {
+    statusEl.textContent = "❌ Error sending code.";
+    debugEl.textContent = err.message;
+  }
+}
+
+// Get Strava code from redirect
+const params = new URLSearchParams(window.location.search);
+const code = params.get("code");
+
+if (code) {
+  const user_name = "ben_taffet"; // replace with dynamic username if needed
+  console.log("Found Strava code:", code);
+  sendCodeToBackend(code, user_name);
+}
+</script>
