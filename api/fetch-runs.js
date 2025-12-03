@@ -8,11 +8,6 @@ export default async function handler(req, res) {
     }
 
     const { user_name, max_runs } = req.body;
-    if (!user_name) {
-      return res.status(400).json({ error: "Missing user_name" });
-    }
-
-    const limit = max_runs || 5;
 
     // 1️⃣ Connect to MySQL
     const connection = await mysql.createConnection({
@@ -24,10 +19,24 @@ export default async function handler(req, res) {
       ssl: { rejectUnauthorized: false },
     });
 
+    let usernameToUse = user_name;
+
+    // If no username provided, get the latest from DB
+    if (!usernameToUse) {
+      const [rowsUser] = await connection.execute(
+        "SELECT user_name FROM strava_tokens ORDER BY id DESC LIMIT 1"
+      );
+      if (!rowsUser.length) {
+        await connection.end();
+        return res.status(404).json({ error: "No user found in database" });
+      }
+      usernameToUse = rowsUser[0].user_name;
+    }
+
     // 2️⃣ Fetch the latest Strava code for this user
     const [rows] = await connection.execute(
       "SELECT code FROM strava_tokens WHERE user_name = ? ORDER BY id DESC LIMIT 1",
-      [user_name]
+      [usernameToUse]
     );
     await connection.end();
 
@@ -36,6 +45,7 @@ export default async function handler(req, res) {
     }
 
     const code = rows[0].code;
+    const limit = max_runs || 5;
 
     // 3️⃣ Exchange code for access token
     const tokenRes = await axios.post(
@@ -72,7 +82,16 @@ export default async function handler(req, res) {
       max_heartrate: act.hasOwnProperty("max_heartrate") ? act.max_heartrate : null,
     }));
 
-    return res.status(200).json({ activities });
+    // 6️⃣ Compute total moving time for runs
+    const total_moving_time_s = activities
+      .filter(act => act.type === "run")
+      .reduce((sum, act) => sum + (act.moving_time_s || 0), 0);
+
+    return res.status(200).json({
+      user_name: usernameToUse,
+      total_moving_time_s,
+      activities
+    });
 
   } catch (err) {
     console.error("Error in fetch-runs:", err.response?.data || err.message || err);
