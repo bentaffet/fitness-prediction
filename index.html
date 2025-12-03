@@ -2,30 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Strava Integration</title>
+  <title>Strava Fitness Analysis</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial; max-width: 700px; margin: 40px auto; text-align: center; }
+    body { font-family: Arial; max-width: 800px; margin: 40px auto; text-align: center; }
     button { background: #fc4c02; color: white; border: none; padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px 0; }
     button:hover { background: #e03d00; }
     pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
+    canvas { margin-top: 30px; }
   </style>
 </head>
 <body>
-  <h1>Connect Your Strava Account</h1>
-  <p>Click the button below to authorize Strava and store your code.</p>
+  <h1>Strava Fitness/Fatigue Analysis</h1>
+  <p>Authorize Strava and analyze your runs.</p>
 
   <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
     <button>Connect with Strava</button>
   </a>
 
   <div id="status"></div>
-  <button id="fetch-runs-btn" style="display:none;">Fetch My Last Runs</button>
+  <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
   <pre id="runs-output"></pre>
+  <canvas id="fitness-chart" width="700" height="400"></canvas>
 
   <script>
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("runs-output");
     const fetchBtn = document.getElementById("fetch-runs-btn");
+    const ctx = document.getElementById("fitness-chart").getContext("2d");
+    let fitnessChart;
+
     const user_name = "ben_taffet"; // replace with dynamic logic if needed
 
     async function sendCodeToBackend(code) {
@@ -50,7 +56,7 @@
       }
     }
 
-    async function fetchRuns(max_runs = 5) {
+    async function fetchRuns(max_runs = 50) {
       outputEl.textContent = "Fetching last runs...";
       try {
         const res = await fetch("/api/fetch-runs", {
@@ -61,11 +67,62 @@
         const data = await res.json();
         if (res.ok && data.activities) {
           outputEl.textContent = JSON.stringify(data.activities, null, 2);
+          analyzeRuns(data.activities);
         } else {
           outputEl.textContent = "❌ Failed to fetch runs: " + JSON.stringify(data, null, 2);
         }
       } catch (err) {
         outputEl.textContent = "❌ Error fetching runs: " + err.message;
+      }
+    }
+
+    async function analyzeRuns(activities) {
+      statusEl.textContent = "Analyzing runs...";
+      try {
+        const res = await fetch("/api/analyze-runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activities })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          statusEl.textContent = "✅ Analysis complete!";
+          outputEl.textContent = JSON.stringify(data, null, 2);
+
+          // Plot modeled fitness vs week
+          const labels = activities
+            .filter(a => a.type === "run")
+            .map((a, i) => `Run ${i+1}`);
+          const modeledFitness = data.modeledfitness;
+
+          if (fitnessChart) fitnessChart.destroy();
+          fitnessChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [{
+                label: 'Modeled Fitness',
+                data: modeledFitness,
+                borderColor: 'rgba(252,76,2,1)',
+                backgroundColor: 'rgba(252,76,2,0.2)',
+                fill: true,
+                tension: 0.2
+              }]
+            },
+            options: {
+              responsive: true,
+              scales: {
+                x: { title: { display: true, text: 'Run' } },
+                y: { title: { display: true, text: 'Modeled Fitness' } }
+              }
+            }
+          });
+
+        } else {
+          outputEl.textContent = "❌ Analysis failed: " + JSON.stringify(data, null, 2);
+        }
+      } catch (err) {
+        outputEl.textContent = "❌ Error analyzing runs: " + err.message;
       }
     }
 
