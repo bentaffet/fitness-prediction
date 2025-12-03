@@ -26,10 +26,9 @@
     const statusEl = document.getElementById("status");
     const outputEl = document.getElementById("runs-output");
     const fetchBtn = document.getElementById("fetch-runs-btn");
+    const user_name = "ben_taffet"; // replace with dynamic logic if needed
 
-    const user_name = "ben_taffet"; // replace with actual username logic if needed
-
-    async function sendCodeToBackend(code, user_name) {
+    async function sendCodeToBackend(code) {
       statusEl.textContent = "Sending code to backend...";
       try {
         const res = await fetch("/api/store-code", {
@@ -51,7 +50,7 @@
       }
     }
 
-    async function fetchRuns(user_name, max_runs=5) {
+    async function fetchRuns(max_runs = 5) {
       outputEl.textContent = "Fetching last runs...";
       try {
         const res = await fetch("/api/fetch-runs", {
@@ -73,9 +72,9 @@
     // Check for Strava redirect code
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
-    if (code) sendCodeToBackend(code, user_name);
+    if (code) sendCodeToBackend(code);
 
-    fetchBtn.addEventListener("click", () => fetchRuns(user_name));
+    fetchBtn.addEventListener("click", () => fetchRuns());
   </script>
 </body>
 </html>
