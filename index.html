@@ -10,17 +10,26 @@
     button:hover { background: #e03d00; }
     pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
     canvas { margin-top: 30px; }
+    input { padding: 8px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; margin: 10px 0; }
   </style>
 </head>
 <body>
   <h1>Strava Fitness/Fatigue Analysis</h1>
   <p>Authorize Strava and analyze your runs.</p>
 
+  <!-- Strava login button -->
   <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
     <button>Connect with Strava</button>
   </a>
 
   <div id="status"></div>
+
+  <!-- Dynamic username input -->
+  <div id="username-container" style="margin:20px 0;">
+    <input type="text" id="username-input" placeholder="Enter your username">
+    <button id="set-username">Set Username</button>
+  </div>
+
   <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
   <pre id="runs-output"></pre>
   <canvas id="fitness-chart" width="700" height="400"></canvas>
@@ -31,10 +40,30 @@
     const fetchBtn = document.getElementById("fetch-runs-btn");
     const ctx = document.getElementById("fitness-chart").getContext("2d");
     let fitnessChart;
+    let user_name = localStorage.getItem("user_name") || "";
 
-    const user_name = "ben_taffet"; // replace with dynamic logic if needed
+    const usernameInput = document.getElementById("username-input");
+    const setUsernameBtn = document.getElementById("set-username");
+
+    // If username is already stored, hide input and enable fetch
+    if (user_name) {
+      statusEl.textContent = `Username: ${user_name}`;
+      fetchBtn.style.display = "inline-block";
+      document.getElementById("username-container").style.display = "none";
+    }
+
+    setUsernameBtn.addEventListener("click", () => {
+      const value = usernameInput.value.trim();
+      if (!value) return alert("Please enter a username");
+      user_name = value;
+      localStorage.setItem("user_name", user_name);
+      statusEl.textContent = `Username set to: ${user_name}`;
+      fetchBtn.style.display = "inline-block";
+      document.getElementById("username-container").style.display = "none";
+    });
 
     async function sendCodeToBackend(code) {
+      if (!user_name) return alert("Set your username first");
       statusEl.textContent = "Sending code to backend...";
       try {
         const res = await fetch("/api/store-code", {
@@ -57,6 +86,7 @@
     }
 
     async function fetchRuns(max_runs = 50) {
+      if (!user_name) return alert("Username not set");
       outputEl.textContent = "Fetching last runs...";
       try {
         const res = await fetch("/api/fetch-runs", {
@@ -89,10 +119,8 @@
           statusEl.textContent = "✅ Analysis complete!";
           outputEl.textContent = JSON.stringify(data, null, 2);
 
-          // Plot modeled fitness vs week
-          const labels = activities
-            .filter(a => a.type === "run")
-            .map((a, i) => `Run ${i+1}`);
+          // Plot modeled fitness
+          const labels = activities.filter(a => a.type === "run").map((a, i) => `Run ${i+1}`);
           const modeledFitness = data.modeledfitness;
 
           if (fitnessChart) fitnessChart.destroy();
@@ -126,7 +154,7 @@
       }
     }
 
-    // Check for Strava redirect code
+    // Handle Strava OAuth redirect
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     if (code) sendCodeToBackend(code);
