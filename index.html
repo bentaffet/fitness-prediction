@@ -10,105 +10,116 @@
     button:hover { background: #e03d00; }
     input { padding: 8px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; margin: 10px 0; }
     pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
-    canvas { margin-top: 30px; }
+    canvas { margin-top: 30px; max-width: 100%; }
+    #analysis-container { margin-top: 30px; }
   </style>
 </head>
 <body>
   <h1>Strava Fitness/Fatigue Analysis</h1>
-  <p>Authorize Strava and analyze your runs.</p>
 
-  <!-- Strava login -->
-  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
-    <button>Connect with Strava</button>
-  </a>
-
-  <!-- Username input -->
-  <div id="username-container">
-    <input type="text" id="username-input" placeholder="Enter your username">
-    <button id="set-username">Set Username</button>
+  <div id="login-container">
+    <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
+      <button>Connect with Strava</button>
+    </a>
   </div>
 
   <div id="status"></div>
-  <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
 
+  <div id="fetch-container" style="display:none;">
+    <button id="fetch-runs-btn">Fetch & Analyze My Last Runs</button>
+  </div>
 
-<<script type="module">
-import { analyzeActivities } from "./analyzeActivities.js";
+  <div id="analysis-container"></div>
 
-async function main() {
-  const status = document.getElementById("status");
-  const fetchBtn = document.getElementById("fetch-runs-btn");
+  <script type="module">
+    import { analyzeActivities } from "./analyzeActivities.js";
 
-  // Check if Strava redirected back with ?code=xxxx
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get("code");
+    const statusEl = document.getElementById("status");
+    const fetchContainer = document.getElementById("fetch-container");
+    const analysisContainer = document.getElementById("analysis-container");
+    let stravaRefresh = null;
 
-  // ---------------------------------------------------
-  // AUTHENTICATION FLOW (kept intact)
-  // ---------------------------------------------------
-  if (code) {
-    status.innerText = "Authorizing with Strava…";
-
-    const tokenRes = await fetch(`/api/exchange?code=${code}`);
-    const tokenData = await tokenRes.json();
-
-    if (tokenData.error) {
-      status.innerText = "Authorization failed.";
-      console.error(tokenData);
-      return;
+    async function exchangeCodeForToken(code) {
+      const res = await fetch(`/api/exchange?code=${code}`);
+      return res.json();
     }
 
-    // Store refresh token in memory
-    window.STRAVA_REFRESH = tokenData.refresh_token;
-
-    status.innerText = "Authenticated! Click the button to fetch your activities.";
-    fetchBtn.style.display = "block";
-  }
-
-  // ---------------------------------------------------
-  // FETCH ACTIVITIES + PRINT + ANALYZE
-  // ---------------------------------------------------
-  fetchBtn.addEventListener("click", async () => {
-    if (!window.STRAVA_REFRESH) {
-      status.innerText = "Missing Strava authentication!";
-      return;
+    async function fetchActivities(refreshToken) {
+      const res = await fetch(`/api/activities?refresh_token=${refreshToken}`);
+      return res.json();
     }
 
-    status.innerText = "Fetching activities…";
+    function renderAnalysis(activities, analysis) {
+      analysisContainer.innerHTML = "";
 
-    const res = await fetch(`/api/activities?refresh_token=${window.STRAVA_REFRESH}`);
-    const data = await res.json();
+      // Total distance
+      const totalMiles = (activities.reduce((sum, a) => sum + a.distance, 0) * 0.000621371).toFixed(2);
+      const summary = document.createElement("p");
+      summary.innerText = `Total Distance: ${totalMiles} miles`;
+      analysisContainer.appendChild(summary);
 
-    if (data.error) {
-      status.innerText = "Error fetching runs.";
-      console.error(data);
-      return;
+      // Analysis JSON
+      const pre = document.createElement("pre");
+      pre.textContent = "Analysis:\n" + JSON.stringify(analysis, null, 2);
+      analysisContainer.appendChild(pre);
+
+      // Example chart (optional)
+      const canvas = document.createElement("canvas");
+      analysisContainer.appendChild(canvas);
+      new Chart(canvas, {
+        type: "line",
+        data: {
+          labels: activities.map((a, i) => `Run ${i+1}`),
+          datasets: [{
+            label: "Distance (miles)",
+            data: activities.map(a => (a.distance * 0.000621371).toFixed(2)),
+            borderColor: "#fc4c02",
+            backgroundColor: "rgba(252,76,2,0.2)"
+          }]
+        }
+      });
     }
 
-    // Total distance (meters → miles)
-    const miles = (data.total_distance * 0.000621371).toFixed(2);
-    status.innerText = `Total Distance: ${miles} miles`;
+    async function main() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
 
-    // Print activities to page
-    const raw = document.createElement("pre");
-    raw.textContent = JSON.stringify(data.activities, null, 2);
-    document.body.appendChild(raw);
+      if (code) {
+        statusEl.innerText = "Authorizing with Strava…";
+        const tokenData = await exchangeCodeForToken(code);
+        if (tokenData.error) {
+          statusEl.innerText = "Authorization failed.";
+          console.error(tokenData);
+          return;
+        }
 
-    // Analyze
-    const analysis = analyzeActivities(data.activities);
+        stravaRefresh = tokenData.refresh_token;
+        statusEl.innerText = "Authenticated! Fetch your activities below.";
+        fetchContainer.style.display = "block";
+      }
 
-    const analysisBox = document.createElement("pre");
-    analysisBox.textContent = "Analysis:\n" + JSON.stringify(analysis, null, 2);
-    document.body.appendChild(analysisBox);
+      document.getElementById("fetch-runs-btn").addEventListener("click", async () => {
+        if (!stravaRefresh) {
+          statusEl.innerText = "Missing Strava authentication!";
+          return;
+        }
 
-    console.log("Activities:", data.activities);
-    console.log("Analysis:", analysis);
-  });
-}
+        statusEl.innerText = "Fetching activities…";
+        const data = await fetchActivities(stravaRefresh);
 
-main();
-</script>
+        if (data.error) {
+          statusEl.innerText = "Error fetching runs.";
+          console.error(data);
+          return;
+        }
 
+        const analysis = analyzeActivities(data.activities);
+        renderAnalysis(data.activities, analysis);
+        statusEl.innerText = "Analysis complete!";
+      });
+    }
 
+    main();
+  </script>
 </body>
 </html>
