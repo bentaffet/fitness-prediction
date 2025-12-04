@@ -39,117 +39,93 @@ const outputEl = document.getElementById("runs-output");
 const fetchBtn = document.getElementById("fetch-runs-btn");
 const ctx = document.getElementById("fitness-chart").getContext("2d");
 let fitnessChart;
-
 let user_name = localStorage.getItem("user_name") || "";
 
 const usernameInput = document.getElementById("username-input");
-const setUsernameBtn = document.getElementById("set-username-btn");
+const setUsernameBtn = document.getElementById("set-username");
 
-// Show/hide based on saved username
 if(user_name){
-  usernameInput.style.display = "none";
-  setUsernameBtn.style.display = "none";
-  fetchBtn.style.display = "inline-block";
   statusEl.textContent = `Username: ${user_name}`;
+  fetchBtn.style.display="inline-block";
+  document.getElementById("username-container").style.display="none";
 }
 
-setUsernameBtn.addEventListener("click", ()=>{
-  const val = usernameInput.value.trim();
-  if(!val) return alert("Enter username");
-  user_name = val;
+setUsernameBtn.addEventListener("click",()=>{
+  const value = usernameInput.value.trim();
+  if(!value) return alert("Please enter a username");
+  user_name = value;
   localStorage.setItem("user_name", user_name);
-  usernameInput.style.display = "none";
-  setUsernameBtn.style.display = "none";
-  fetchBtn.style.display = "inline-block";
-  statusEl.textContent = `Username: ${user_name}`;
+  statusEl.textContent = `Username set to: ${user_name}`;
+  fetchBtn.style.display="inline-block";
+  document.getElementById("username-container").style.display="none";
 });
 
-// Handle Strava OAuth code
-const params = new URLSearchParams(window.location.search);
-const code = params.get("code");
-if(code) sendCodeToBackend(code);
+async function fetchAndAnalyze(max_runs=20){
+  if(!user_name) return alert("Set your username first");
+  outputEl.textContent = "Fetching and analyzing runs...";
 
-async function sendCodeToBackend(code){
-  if(!user_name) return alert("Set username first");
-  statusEl.textContent = "Sending code to backend...";
-  try{
-    const res = await fetch("/api/store-code", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({code, user_name})
-    });
-    const data = await res.json();
-    if(res.ok){
-      statusEl.textContent = "✅ Code stored!";
-      fetchBtn.style.display="inline-block";
-    } else {
-      statusEl.textContent = "❌ Failed to store code";
-      outputEl.textContent = JSON.stringify(data,null,2);
-    }
-  } catch(err){
-    statusEl.textContent = "❌ Error sending code";
-    outputEl.textContent = err.message;
-  }
-}
-
-fetchBtn.addEventListener("click", ()=> fetchRuns());
-
-async function fetchRuns(max_runs=20){
-  if(!user_name) return alert("Set username first");
-  outputEl.textContent = "Fetching runs...";
   try{
     const res = await fetch("/api/fetch-runs", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({user_name, max_runs})
+      body:JSON.stringify({user_name, max_runs})
     });
     const data = await res.json();
-    let runs = data.activities || [];
-    if(!runs.length){
-      outputEl.textContent="⚠️ No runs found";
-      return;
-    }
-    outputEl.textContent = JSON.stringify(runs,null,2);
-    analyzeRuns(runs);
-  } catch(err){
-    outputEl.textContent = "❌ Error fetching runs: "+err.message;
+
+    if(!res.ok) return outputEl.textContent = `❌ Error: ${data.error}`;
+
+    // Send activities to analyze-runs
+    const analyzeRes = await fetch("/api/analyze-runs",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ activities: data.activities, user_name })
+    });
+    const metrics = await analyzeRes.json();
+    if(!analyzeRes.ok) return outputEl.textContent = `❌ Analysis failed: ${JSON.stringify(metrics)}`;
+
+    // Display only metrics
+    outputEl.textContent = `
+User: ${metrics.user_name}
+Best Fit: ${metrics.best_fit.toFixed(2)}
+Best Fatigue: ${metrics.best_fat.toFixed(2)}
+R²: ${metrics.R2.toFixed(3)}
+Modeled Fitness: [${metrics.modeledfitness.map(v=>v.toFixed(2)).join(", ")}]
+S_FF: [${metrics.S_FF.map(v=>v.toFixed(2)).join(", ")}]
+Training Load: [${metrics.trainingload.map(v=>v.toFixed(2)).join(", ")}]
+`.trim();
+
+    // Plot Modeled Fitness
+    const labels = metrics.modeledfitness.map((_,i)=>`Run ${i+1}`);
+    if(fitnessChart) fitnessChart.destroy();
+    fitnessChart = new Chart(ctx,{
+      type:"line",
+      data:{
+        labels,
+        datasets:[{
+          label:"Modeled Fitness",
+          data:metrics.modeledfitness,
+          borderColor:'rgba(252,76,2,1)',
+          backgroundColor:'rgba(252,76,2,0.2)',
+          fill:true,
+          tension:0.2
+        }]
+      },
+      options:{
+        responsive:true,
+        scales:{
+          x:{ title:{display:true,text:'Run'} },
+          y:{ title:{display:true,text:'Modeled Fitness'} }
+        }
+      }
+    });
+
+  }catch(err){
+    outputEl.textContent = "❌ Error fetching/analyzing runs: "+err.message;
   }
 }
 
-function analyzeRuns(runs){
-  statusEl.textContent = "Analyzing runs...";
-  const modeledfitness = runs.map(r=>{
-    const distance_mi = r.distance_m*0.000621371;
-    const pace = r.moving_time_s/60/distance_mi;
-    const hr = r.average_heartrate || 100;
-    return distance_mi / pace * (hr/100);
-  });
-
-  const labels = runs.map((r,i)=>`Run ${i+1}`);
-  if(fitnessChart) fitnessChart.destroy();
-  fitnessChart = new Chart(ctx,{
-    type:'line',
-    data:{
-      labels,
-      datasets:[{
-        label:'Modeled Fitness',
-        data:modeledfitness,
-        borderColor:'rgba(252,76,2,1)',
-        backgroundColor:'rgba(252,76,2,0.2)',
-        fill:true,
-        tension:0.2
-      }]
-    },
-    options:{
-      responsive:true,
-      scales:{
-        x:{ title:{ display:true, text:'Run'} },
-        y:{ title:{ display:true, text:'Modeled Fitness'} }
-      }
-    }
-  });
-  statusEl.textContent = "✅ Analysis complete!";
-}
+fetchBtn.addEventListener("click",()=>fetchAndAnalyze());
 </script>
+
 </body>
 </html>
