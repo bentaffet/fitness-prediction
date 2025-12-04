@@ -5,176 +5,69 @@
   <title>Strava Fitness Analysis</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial; max-width: 800px; margin: 40px auto; text-align: center; }
-    button { background: #fc4c02; color: white; border: none; padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px 0; }
+    body { font-family: Arial; max-width: 700px; margin: 40px auto; text-align: center; }
+    button { background: #fc4c02; color: white; border: none; padding: 12px 24px; cursor: pointer; border-radius: 5px; margin: 10px 0; }
     button:hover { background: #e03d00; }
-    pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
     canvas { margin-top: 30px; }
-    input { padding: 8px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; margin: 10px 0; }
+    pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
   </style>
 </head>
 <body>
-  <h1>Strava Fitness/Fatigue Analysis</h1>
-  <p>Authorize Strava and analyze your runs.</p>
+  <h1>Strava Fitness Analysis</h1>
+  <p>Connect Strava and see your modeled fitness.</p>
 
-  <!-- Strava login button -->
-  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
+  <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity:read_all&response_type=code">
     <button>Connect with Strava</button>
   </a>
 
   <div id="status"></div>
-
-  <!-- Dynamic username input -->
-  <div id="username-container" style="margin:20px 0;">
-    <input type="text" id="username-input" placeholder="Enter your username">
-    <button id="set-username">Set Username</button>
-  </div>
-
-  <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
-  <pre id="runs-output"></pre>
-  <canvas id="fitness-chart" width="700" height="400"></canvas>
+  <button id="fetch-btn" style="display:none;">Fetch & Analyze Runs</button>
+  <pre id="output"></pre>
+  <canvas id="chart" width="700" height="400"></canvas>
 
   <script>
     const statusEl = document.getElementById("status");
-    const outputEl = document.getElementById("runs-output");
-    const fetchBtn = document.getElementById("fetch-runs-btn");
-    const ctx = document.getElementById("fitness-chart").getContext("2d");
-    let fitnessChart;
-    let user_name = localStorage.getItem("user_name") || "";
+    const outputEl = document.getElementById("output");
+    const fetchBtn = document.getElementById("fetch-btn");
+    const ctx = document.getElementById("chart").getContext("2d");
+    let chart;
 
-    const usernameInput = document.getElementById("username-input");
-    const setUsernameBtn = document.getElementById("set-username");
+    let user_name = localStorage.getItem("user_name") || prompt("Enter your username:");
+    localStorage.setItem("user_name", user_name);
+    statusEl.textContent = "Username: " + user_name;
+    fetchBtn.style.display = "inline-block";
 
-    // If username is already stored, hide input and enable fetch
-    if (user_name) {
-      statusEl.textContent = `Username: ${user_name}`;
-      fetchBtn.style.display = "inline-block";
-      document.getElementById("username-container").style.display = "none";
+    // Handle Strava OAuth code
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      fetch("/api/store-code", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ code, user_name }) });
     }
 
-    setUsernameBtn.addEventListener("click", () => {
-      const value = usernameInput.value.trim();
-      if (!value) return alert("Please enter a username");
-      user_name = value;
-      localStorage.setItem("user_name", user_name);
-      statusEl.textContent = `Username set to: ${user_name}`;
-      fetchBtn.style.display = "inline-block";
-      document.getElementById("username-container").style.display = "none";
+    fetchBtn.addEventListener("click", async () => {
+      outputEl.textContent = "Fetching runs...";
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ user_name })
+        });
+        const data = await res.json();
+        outputEl.textContent = JSON.stringify(data, null, 2);
+
+        const labels = data.runs.map((r,i)=>`Run ${i+1}`);
+        const fitness = data.modeledfitness;
+
+        if(chart) chart.destroy();
+        chart = new Chart(ctx, {
+          type:'line',
+          data: { labels, datasets:[{ label:'Modeled Fitness', data:fitness, borderColor:'orange', backgroundColor:'rgba(252,76,2,0.2)', fill:true, tension:0.2 }]},
+          options:{ responsive:true, scales:{ x:{ title:{display:true,text:'Run'} }, y:{ title:{display:true,text:'Fitness'} } } }
+        });
+
+      } catch(e) {
+        outputEl.textContent = "Error: " + e.message;
+      }
     });
-
-    async function sendCodeToBackend(code) {
-      if (!user_name) return alert("Set your username first");
-      statusEl.textContent = "Sending code to backend...";
-      try {
-        const res = await fetch("/api/store-code", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, user_name })
-        });
-        const data = await res.json();
-        if (res.ok) {
-          statusEl.textContent = "✅ Code stored successfully!";
-          fetchBtn.style.display = "inline-block";
-        } else {
-          statusEl.textContent = "❌ Failed to store code.";
-          outputEl.textContent = JSON.stringify(data, null, 2);
-        }
-      } catch (err) {
-        statusEl.textContent = "❌ Error sending code.";
-        outputEl.textContent = err.message;
-      }
-    }
-
-    async function fetchRuns(max_runs = 50) {
-      if (!user_name) return alert("Username not set");
-      outputEl.textContent = "Fetching last runs...";
-      try {
-        const res = await fetch("/api/fetch-runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_name, max_runs })
-        });
-        const data = await res.json();
-        console.log("Fetched runs:", data);
-
-        let activities = data.activities || [];
-        if (!activities.length) {
-          outputEl.textContent = "⚠️ No runs found. Using example data for testing.";
-          activities = [
-            { type: "run", distance: 5000, moving_time: 1500 },
-            { type: "run", distance: 6000, moving_time: 1600 }
-          ];
-        }
-
-        outputEl.textContent = JSON.stringify(activities, null, 2);
-        analyzeRuns(activities);
-
-      } catch (err) {
-        outputEl.textContent = "❌ Error fetching runs: " + err.message;
-      }
-    }
-
-    async function analyzeRuns(activities) {
-      if (!activities || !activities.length) {
-        outputEl.textContent = "❌ No activity data to analyze.";
-        return;
-      }
-
-      statusEl.textContent = "Analyzing runs...";
-      console.log("Sending to analyze-runs:", activities);
-
-      try {
-        const res = await fetch("/api/analyze-runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ activities })
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-          statusEl.textContent = "✅ Analysis complete!";
-          outputEl.textContent = JSON.stringify(data, null, 2);
-
-          const labels = activities.filter(a => a.type === "run").map((a, i) => `Run ${i+1}`);
-          const modeledFitness = data.modeledfitness || [];
-
-          if (fitnessChart) fitnessChart.destroy();
-          fitnessChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels,
-              datasets: [{
-                label: 'Modeled Fitness',
-                data: modeledFitness,
-                borderColor: 'rgba(252,76,2,1)',
-                backgroundColor: 'rgba(252,76,2,0.2)',
-                fill: true,
-                tension: 0.2
-              }]
-            },
-            options: {
-              responsive: true,
-              scales: {
-                x: { title: { display: true, text: 'Run' } },
-                y: { title: { display: true, text: 'Modeled Fitness' } }
-              }
-            }
-          });
-
-        } else {
-          outputEl.textContent = "❌ Analysis failed: " + JSON.stringify(data, null, 2);
-        }
-      } catch (err) {
-        outputEl.textContent = "❌ Error analyzing runs: " + err.message;
-      }
-    }
-
-    // Handle Strava OAuth redirect
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    if (code) sendCodeToBackend(code);
-
-    fetchBtn.addEventListener("click", () => fetchRuns());
   </script>
 </body>
 </html>
