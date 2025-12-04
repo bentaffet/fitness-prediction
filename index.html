@@ -92,6 +92,7 @@
     async function main() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
+      console.log("Strava code:", code); // <--- check in DevTools
 
       if (code) {
         statusEl.innerText = "Authorizing with Strava…";
