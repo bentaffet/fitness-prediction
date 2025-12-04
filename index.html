@@ -95,33 +95,48 @@
           body: JSON.stringify({ user_name, max_runs })
         });
         const data = await res.json();
-        if (res.ok && data.activities) {
-          outputEl.textContent = JSON.stringify(data.activities, null, 2);
-          analyzeRuns(data.activities);
-        } else {
-          outputEl.textContent = "❌ Failed to fetch runs: " + JSON.stringify(data, null, 2);
+        console.log("Fetched runs:", data);
+
+        let activities = data.activities || [];
+        if (!activities.length) {
+          outputEl.textContent = "⚠️ No runs found. Using example data for testing.";
+          activities = [
+            { type: "run", distance: 5000, moving_time: 1500 },
+            { type: "run", distance: 6000, moving_time: 1600 }
+          ];
         }
+
+        outputEl.textContent = JSON.stringify(activities, null, 2);
+        analyzeRuns(activities);
+
       } catch (err) {
         outputEl.textContent = "❌ Error fetching runs: " + err.message;
       }
     }
 
     async function analyzeRuns(activities) {
+      if (!activities || !activities.length) {
+        outputEl.textContent = "❌ No activity data to analyze.";
+        return;
+      }
+
       statusEl.textContent = "Analyzing runs...";
+      console.log("Sending to analyze-runs:", activities);
+
       try {
         const res = await fetch("/api/analyze-runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ activities })
         });
+
         const data = await res.json();
         if (res.ok) {
           statusEl.textContent = "✅ Analysis complete!";
           outputEl.textContent = JSON.stringify(data, null, 2);
 
-          // Plot modeled fitness
           const labels = activities.filter(a => a.type === "run").map((a, i) => `Run ${i+1}`);
-          const modeledFitness = data.modeledfitness;
+          const modeledFitness = data.modeledfitness || [];
 
           if (fitnessChart) fitnessChart.destroy();
           fitnessChart = new Chart(ctx, {
