@@ -72,7 +72,13 @@
           headers: {"Content-Type":"application/json"},
           body: JSON.stringify({ code, user_name })
         });
-        const data = await res.json();
+        let data;
+        try {
+          data = await res.json();
+        } catch(e) {
+          outputEl.textContent = `❌ Backend did not return JSON:\n${await res.text()}`;
+          return;
+        }
         if(res.ok){
           statusEl.textContent = "✅ Code stored successfully!";
           fetchBtn.style.display = "inline-block";
@@ -98,7 +104,13 @@
           headers: {"Content-Type":"application/json"},
           body: JSON.stringify({ user_name, max_runs })
         });
-        const data = await res.json();
+        let data;
+        try {
+          data = await res.json();
+        } catch(e) {
+          outputEl.textContent = `❌ Backend did not return JSON:\n${await res.text()}`;
+          return;
+        }
         if(!res.ok) return outputEl.textContent = `❌ Error: ${data.error}`;
 
         // Analyze runs
