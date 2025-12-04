@@ -1,43 +1,50 @@
-// /api/activities.js
-import axios from "axios";
+// api/activities.js
+import fetch from "node-fetch";
 
 export default async function handler(req, res) {
-  try {
-    const { refresh_token } = req.query;
-    if (!refresh_token) return res.status(400).json({ error: "Missing refresh_token" });
+  const { refresh_token } = req.query;
 
-    // Refresh the access token
-    const refresh = await axios.post("https://www.strava.com/oauth/token", {
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
-      grant_type: "refresh_token",
-      refresh_token
+  if (!refresh_token) {
+    return res.status(400).json({ error: "Missing refresh_token" });
+  }
+
+  const client_id = "185647";
+  const client_secret = process.env.STRAVA_CLIENT_SECRET;
+  const tokenUrl = "https://www.strava.com/oauth/token";
+
+  try {
+    // Refresh access token
+    const tokenRes = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id,
+        client_secret,
+        grant_type: "refresh_token",
+        refresh_token
+      })
     });
 
-    const access = refresh.data.access_token;
-
-    // Fetch activities
-    const actsRes = await axios.get(
-      "https://www.strava.com/api/v3/athlete/activities?per_page=30",
-      { headers: { Authorization: `Bearer ${access}` } }
-    );
-
-    const activities = actsRes.data;
-
-    // Compute total distance
-    let total_distance = 0;
-    for (const act of activities) {
-      if (act.type === "Run") {
-        total_distance += act.distance; // meters
-      }
+    const tokenData = await tokenRes.json();
+    if (tokenData.errors) {
+      return res.status(400).json({ error: "Invalid refresh token", details: tokenData.errors });
     }
 
-    return res.status(200).json({
-      total_distance,  // meters
-      activities       // raw array
+    const access_token = tokenData.access_token;
+
+    // Fetch activities
+    const activitiesRes = await fetch("https://www.strava.com/api/v3/athlete/activities?per_page=50", {
+      headers: { Authorization: `Bearer ${access_token}` }
     });
 
+    const activities = await activitiesRes.json();
+
+    // Return total distance and activities
+    const total_distance = activities.reduce((sum, a) => sum + (a.distance || 0), 0);
+
+    return res.status(200).json({ activities, total_distance });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
   }
 }
