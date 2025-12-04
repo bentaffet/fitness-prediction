@@ -1,15 +1,11 @@
-// api/exchange.js
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
   const { code } = req.query;
+  if (!code) return res.status(400).json({ error: "Missing code" });
 
-  if (!code) {
-    return res.status(400).json({ error: "Missing code" });
-  }
-
-  const client_id = "185647";  // your Strava client ID
-  const client_secret = process.env.STRAVA_CLIENT_SECRET; // store secret in environment
+  const client_id = "185647";
+  const client_secret = process.env.STRAVA_CLIENT_SECRET;
   const tokenUrl = "https://www.strava.com/oauth/token";
 
   try {
@@ -23,13 +19,9 @@ export default async function handler(req, res) {
         grant_type: "authorization_code"
       })
     });
-
     const tokenData = await tokenRes.json();
-    if (tokenData.errors) {
-      return res.status(400).json({ error: "Invalid code", details: tokenData.errors });
-    }
+    if (tokenData.errors) return res.status(400).json({ error: tokenData.errors });
 
-    // Return refresh token to frontend
     return res.status(200).json({
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,

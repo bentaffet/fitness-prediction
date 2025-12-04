@@ -5,51 +5,18 @@
   <title>Strava Fitness Analysis</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      text-align: center;
-    }
-    button {
-      background: #fc4c02;
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      font-size: 16px;
-      cursor: pointer;
-      border-radius: 5px;
-      margin: 10px 0;
-    }
+    body { font-family: Arial; max-width: 900px; margin: 40px auto; text-align: center; }
+    button { background: #fc4c02; color: white; border: none; padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 5px; margin: 10px 0; }
     button:hover { background: #e03d00; }
-    input {
-      padding: 8px;
-      font-size: 14px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      margin: 10px 0;
-    }
-    pre {
-      text-align: left;
-      background: #f5f5f5;
-      padding: 15px;
-      border-radius: 5px;
-      overflow-x: auto;
-      margin-top: 20px;
-    }
-    canvas {
-      margin-top: 30px;
-      max-width: 100%;
-    }
-    #analysis-container {
-      margin-top: 30px;
-    }
+    pre { text-align: left; background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; margin-top: 20px; }
+    canvas { margin-top: 30px; max-width: 100%; }
+    #analysis-container { margin-top: 30px; }
   </style>
 </head>
 <body>
   <h1>Strava Fitness/Fatigue Analysis</h1>
 
-  <!-- Strava Login -->
+  <!-- Login -->
   <div id="login-container">
     <a id="strava-login" href="https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code">
       <button>Connect with Strava</button>
@@ -63,7 +30,7 @@
     <button id="fetch-runs-btn">Fetch & Analyze My Last Runs</button>
   </div>
 
-  <!-- Analysis -->
+  <!-- Analysis container -->
   <div id="analysis-container"></div>
 
   <script type="module">
@@ -104,7 +71,7 @@
       new Chart(canvas, {
         type: "line",
         data: {
-          labels: activities.map((a, i) => `Run ${i + 1}`),
+          labels: activities.map((a, i) => `Run ${i+1}`),
           datasets: [{
             label: "Distance (miles)",
             data: activities.map(a => (a.distance * 0.000621371).toFixed(2)),
@@ -135,6 +102,9 @@
           stravaRefresh = tokenData.refresh_token;
           statusEl.innerText = "Authenticated! Click below to fetch your activities.";
           fetchContainer.style.display = "block";
+
+          // Clear ?code= from URL to prevent reprocessing on refresh
+          window.history.replaceState({}, document.title, "/");
         } catch (err) {
           statusEl.innerText = "Authorization failed.";
           console.error(err);
@@ -148,7 +118,6 @@
         }
 
         statusEl.innerText = "Fetching activities…";
-
         try {
           const data = await fetchActivities(stravaRefresh);
           if (data.error) throw new Error(data.error);

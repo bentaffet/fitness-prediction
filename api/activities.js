@@ -1,12 +1,8 @@
-// api/activities.js
 import fetch from "node-fetch";
 
 export default async function handler(req, res) {
   const { refresh_token } = req.query;
-
-  if (!refresh_token) {
-    return res.status(400).json({ error: "Missing refresh_token" });
-  }
+  if (!refresh_token) return res.status(400).json({ error: "Missing refresh_token" });
 
   const client_id = "185647";
   const client_secret = process.env.STRAVA_CLIENT_SECRET;
@@ -24,22 +20,17 @@ export default async function handler(req, res) {
         refresh_token
       })
     });
-
     const tokenData = await tokenRes.json();
-    if (tokenData.errors) {
-      return res.status(400).json({ error: "Invalid refresh token", details: tokenData.errors });
-    }
+    if (tokenData.errors) return res.status(400).json({ error: tokenData.errors });
 
     const access_token = tokenData.access_token;
 
-    // Fetch activities
+    // Fetch last 50 activities
     const activitiesRes = await fetch("https://www.strava.com/api/v3/athlete/activities?per_page=50", {
       headers: { Authorization: `Bearer ${access_token}` }
     });
-
     const activities = await activitiesRes.json();
 
-    // Return total distance and activities
     const total_distance = activities.reduce((sum, a) => sum + (a.distance || 0), 0);
 
     return res.status(200).json({ activities, total_distance });
