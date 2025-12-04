@@ -32,18 +32,18 @@
   <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
 
 
-  <script>
+<script type="module">
+import { analyzeActivities } from "./analyzeActivities.js";
+
 async function main() {
   const status = document.getElementById("status");
   const fetchBtn = document.getElementById("fetch-runs-btn");
 
-  // Grab OAuth "code" from Strava redirect
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
 
-  // If user just landed from Strava login:
   if (code) {
-    status.innerText = "Authorizing with Strava...";
+    status.innerText = "Authorizing with Strava…";
 
     const tokenRes = await fetch(`/api/exchange?code=${code}`);
     const tokenData = await tokenRes.json();
@@ -53,17 +53,13 @@ async function main() {
       return;
     }
 
-    // Save refresh token in memory
     window.STRAVA_REFRESH = tokenData.refresh_token;
-
-    status.innerText = "Successfully authenticated!";
-
+    status.innerText = "Authenticated! Click to fetch activities.";
     fetchBtn.style.display = "block";
   }
 
-  // When user clicks fetch button
   fetchBtn.addEventListener("click", async () => {
-    status.innerText = "Fetching your last activities…";
+    status.innerText = "Fetching activities…";
 
     const res = await fetch(`/api/activities?refresh_token=${window.STRAVA_REFRESH}`);
     const data = await res.json();
@@ -73,8 +69,24 @@ async function main() {
       return;
     }
 
-    status.innerText = `Fetched ${data.length} activities.`;
-    console.log("Activities:", data);
+    // Print total distance
+    const miles = (data.total_distance * 0.000621371).toFixed(2);
+    status.innerText = `Total Distance: ${miles} miles`;
+
+    // Print activities list
+    console.log("Activities:", data.activities);
+
+    const container = document.createElement("pre");
+    container.textContent = JSON.stringify(data.activities, null, 2);
+    document.body.appendChild(container);
+
+    // Analysis
+    const analysis = analyzeActivities(data.activities);
+    console.log("Analysis:", analysis);
+
+    const aBox = document.createElement("pre");
+    aBox.textContent = JSON.stringify(analysis, null, 2);
+    document.body.appendChild(aBox);
   });
 }
 
