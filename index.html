@@ -32,16 +32,20 @@
   <button id="fetch-runs-btn" style="display:none;">Fetch & Analyze My Last Runs</button>
 
 
-<script type="module">
+<<script type="module">
 import { analyzeActivities } from "./analyzeActivities.js";
 
 async function main() {
   const status = document.getElementById("status");
   const fetchBtn = document.getElementById("fetch-runs-btn");
 
+  // Check if Strava redirected back with ?code=xxxx
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
 
+  // ---------------------------------------------------
+  // AUTHENTICATION FLOW (kept intact)
+  // ---------------------------------------------------
   if (code) {
     status.innerText = "Authorizing with Strava…";
 
@@ -50,15 +54,26 @@ async function main() {
 
     if (tokenData.error) {
       status.innerText = "Authorization failed.";
+      console.error(tokenData);
       return;
     }
 
+    // Store refresh token in memory
     window.STRAVA_REFRESH = tokenData.refresh_token;
-    status.innerText = "Authenticated! Click to fetch activities.";
+
+    status.innerText = "Authenticated! Click the button to fetch your activities.";
     fetchBtn.style.display = "block";
   }
 
+  // ---------------------------------------------------
+  // FETCH ACTIVITIES + PRINT + ANALYZE
+  // ---------------------------------------------------
   fetchBtn.addEventListener("click", async () => {
+    if (!window.STRAVA_REFRESH) {
+      status.innerText = "Missing Strava authentication!";
+      return;
+    }
+
     status.innerText = "Fetching activities…";
 
     const res = await fetch(`/api/activities?refresh_token=${window.STRAVA_REFRESH}`);
@@ -66,32 +81,34 @@ async function main() {
 
     if (data.error) {
       status.innerText = "Error fetching runs.";
+      console.error(data);
       return;
     }
 
-    // Print total distance
+    // Total distance (meters → miles)
     const miles = (data.total_distance * 0.000621371).toFixed(2);
     status.innerText = `Total Distance: ${miles} miles`;
 
-    // Print activities list
-    console.log("Activities:", data.activities);
+    // Print activities to page
+    const raw = document.createElement("pre");
+    raw.textContent = JSON.stringify(data.activities, null, 2);
+    document.body.appendChild(raw);
 
-    const container = document.createElement("pre");
-    container.textContent = JSON.stringify(data.activities, null, 2);
-    document.body.appendChild(container);
-
-    // Analysis
+    // Analyze
     const analysis = analyzeActivities(data.activities);
-    console.log("Analysis:", analysis);
 
-    const aBox = document.createElement("pre");
-    aBox.textContent = JSON.stringify(analysis, null, 2);
-    document.body.appendChild(aBox);
+    const analysisBox = document.createElement("pre");
+    analysisBox.textContent = "Analysis:\n" + JSON.stringify(analysis, null, 2);
+    document.body.appendChild(analysisBox);
+
+    console.log("Activities:", data.activities);
+    console.log("Analysis:", analysis);
   });
 }
 
 main();
 </script>
+
 
 </body>
 </html>
