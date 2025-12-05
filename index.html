@@ -118,19 +118,21 @@
 
       // Find the first Sunday before or on the first run date
       const firstDate = new Date(sorted[0].start_date);
-      const firstSunday = new Date(firstDate);
-      firstSunday.setDate(firstDate.getDate() - firstDate.getDay()); // 0 = Sunday
+      const firstMonday = new Date(firstDate);
+      const day = firstDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      firstMonday.setDate(firstDate.getDate() - ((day + 6) % 7)); // shift back to Monday
 
       function getWeekNumber(d) {
-        const diffMs = new Date(d) - firstSunday;
+        const diffMs = new Date(d) - firstMonday;
         return Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
       }
 
       function formatWeekRange(weekNum) {
-        const start = new Date(firstSunday);
+        const start = new Date(firstMonday);
         start.setDate(start.getDate() + (weekNum - 1) * 7);
         const end = new Date(start);
         end.setDate(end.getDate() + 6);
+        // formatting same as before
         const pad = n => n.toString().padStart(2, '0');
         return `${pad(start.getMonth()+1)}/${pad(start.getDate())} - ${pad(end.getMonth()+1)}/${pad(end.getDate())}`;
       }
