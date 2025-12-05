@@ -7,7 +7,7 @@ heartrate
 day
 
 convert this data to csv
-week #, week distance, week_heartrate, week_pace
+week #, week distance, week time, week_heartrate, week_pace
 
 
 add new col z_pace stata function std(week_pace)

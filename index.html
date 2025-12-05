@@ -15,90 +15,179 @@
   <div id="accessToken" style="margin-top:20px; font-family:monospace;"></div>
   <div id="validation" style="margin-top:20px; font-family:monospace;"></div>
   <button onclick="printLastNRuns(10)">Print Last 10 Runs</button>
+  <button onclick="printWeeklySummary()">Print Weekly Summary</button>
+
 
   <pre id="runOutput"
       style="margin-top:20px; padding:10px; background:#eee; max-width:700px;">
   </pre>
 
-  
+
+
     <script>
-    let runData = []; // <-- store all fetched runs here
+      let runData = []; // <-- store all fetched runs here
 
-    const STRAVA_URL =
-      "https://www.strava.com/oauth/authorize" +
-      "?client_id=185647" +
-      "&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F" +
-      "&approval_prompt=auto" +
-      "&scope=activity%3Aread_all" +
-      "&response_type=code";
+      const STRAVA_URL =
+        "https://www.strava.com/oauth/authorize" +
+        "?client_id=185647" +
+        "&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F" +
+        "&approval_prompt=auto" +
+        "&scope=activity%3Aread_all" +
+        "&response_type=code";
 
-    document.getElementById("stravaBtn").addEventListener("click", () => {
-      window.location.href = STRAVA_URL;
-    });
+      document.getElementById("stravaBtn").addEventListener("click", () => {
+        window.location.href = STRAVA_URL;
+      });
 
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
 
-    if (code) {
-      document.getElementById("authCode").textContent =
-        "Authorization Code: " + code;
+      if (code) {
+        document.getElementById("authCode").textContent =
+          "Authorization Code: " + code;
 
-      // 1. Exchange code for token
-      fetch(`/api/token?code=${code}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.access_token) {
-            document.getElementById("accessToken").textContent =
-              "Access Token: " + data.access_token;
+        // 1. Exchange code for access token
+        fetch(`/api/token?code=${code}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.access_token) {
+              document.getElementById("accessToken").textContent =
+                "Access Token: " + data.access_token;
 
+              document.getElementById("validation").textContent =
+                "Token Validated: YES";
+
+              // 2. Fetch runs after token received
+              fetchRuns(data.access_token);
+
+            } else {
+              document.getElementById("accessToken").textContent =
+                "Access Token: NONE";
+
+              document.getElementById("validation").textContent =
+                "Token Validated: NO";
+            }
+          })
+          .catch(err => {
             document.getElementById("validation").textContent =
-              "Token Validated: YES";
+              "Token Validated: NO (Fetch error: " + err + ")";
+          });
+      }
 
-            // 2. Fetch runs after token received
-            fetchRuns(data.access_token);
 
-          } else {
-            document.getElementById("accessToken").textContent =
-              "Access Token: NONE";
+      /* -------------------------------------------------
+        FUNCTION: Fetch run activities (up to 500)
+      -------------------------------------------------- */
+      async function fetchRuns(accessToken) {
+        const res = await fetch(`/api/fetch-runs?access_token=${accessToken}`);
+        const data = await res.json();
 
-            document.getElementById("validation").textContent =
-              "Token Validated: NO";
+        runData = data.runs; // store globally
+
+        document.getElementById("runOutput").textContent =
+          `Fetched ${runData.length} runs`;
+
+        // Now that runData exists → run summary
+        const weekly = summarizeByWeek(runData);
+        console.log("Weekly Summary:", weekly);
+      }
+
+
+      /* -------------------------------------------------
+        Print last N runs (debug)
+      -------------------------------------------------- */
+      function printLastNRuns(n) {
+        const slice = runData.slice(-n);
+        document.getElementById("runOutput").textContent =
+          JSON.stringify(slice, null, 2);
+      }
+
+      /* -------------------------------------------------
+        Print Weekly Summary
+      -------------------------------------------------- */
+      function printWeeklySummary() {
+        if (!runData || runData.length === 0) {
+          document.getElementById("runOutput").textContent =
+            "No run data loaded yet.";
+          return;
+        }
+
+        const weekly = summarizeByWeek(runData);
+
+        document.getElementById("runOutput").textContent =
+          JSON.stringify(weekly, null, 2);
+      }
+
+      /* -------------------------------------------------
+        Summarize By Week
+      -------------------------------------------------- */
+      function summarizeByWeek(runData) {
+        if (!runData || runData.length === 0) return [];
+
+        // 1. Sort runs oldest → newest
+        const sorted = [...runData].sort(
+          (a, b) => new Date(a.start_date) - new Date(b.start_date)
+        );
+
+        // 2. First date = start of week 1
+        const startDate = new Date(sorted[0].start_date);
+
+        function getWeekNumber(d) {
+          const diffMs = new Date(d) - startDate;
+          const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
+          return diffWeeks + 1;
+        }
+
+        const weeks = {};
+
+        sorted.forEach(run => {
+          const week = getWeekNumber(run.start_date);
+
+          if (!weeks[week]) {
+            weeks[week] = {
+              totalDistMiles: 0,
+              totalTimeMin: 0,
+              weightedHrSum: 0,
+              totalHrWeight: 0
+            };
           }
-        })
-        .catch(err => {
-          document.getElementById("validation").textContent =
-            "Token Validated: NO (Fetch error: " + err + ")";
+
+          const miles = run.distance_m / 1609.34;
+          const minutes = run.moving_time_s / 60;
+
+          weeks[week].totalDistMiles += miles;
+          weeks[week].totalTimeMin += minutes;
+
+          if (run.average_heartrate !== null) {
+            weeks[week].weightedHrSum += run.average_heartrate * miles;
+            weeks[week].totalHrWeight += miles;
+          }
         });
-    }
 
+        const result = [];
 
-    /* -------------------------------------------------
-      FUNCTION: Fetch run activities (up to 500)
-    -------------------------------------------------- */
-    async function fetchRuns(accessToken) {
-      const res = await fetch(`/api/fetch-runs?access_token=${accessToken}`);
-      const data = await res.json();
+        for (const week in weeks) {
+          const w = weeks[week];
 
-      runData = data.runs; // store globally
+          const avgHr =
+            w.totalHrWeight > 0 ? w.weightedHrSum / w.totalHrWeight : null;
 
-      document.getElementById("runOutput").textContent =
-        `Fetched ${runData.length} runs`;
-    }
+          const pace =
+            w.totalDistMiles > 0 ? w.totalTimeMin / w.totalDistMiles : null;
 
+          result.push({
+            week: Number(week),
+            distance: w.totalDistMiles,
+            time: w.totalTimeMin,
+            heartrate: avgHr,
+            pace: pace
+          });
+        }
 
-    /* -------------------------------------------------
-      FUNCTION: Print last N runs (for debugging)
-    -------------------------------------------------- */
-    function printLastNRuns(n) {
-      const slice = runData.slice(-n);
-      document.getElementById("runOutput").textContent =
-        JSON.stringify(slice, null, 2);
-    }
+        return result;
+      }
+      </script>
 
-    // For testing: call this in a button or console:
-    printLastNRuns(10);
-
-  </script>
 
 
 </body>
