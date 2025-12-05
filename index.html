@@ -188,6 +188,30 @@
 
         return result;
       }
+
+      /* -------------------------------------------------
+        Compute Weekly Summary (backend)
+      -------------------------------------------------- */
+      async function computeWeeklySummary() {
+        if (!runData || runData.length === 0) {
+          document.getElementById("runOutput").textContent = "No run data loaded yet.";
+          return;
+        }
+
+        const weekly = summarizeByWeek(runData);
+
+        const res = await fetch("/api/calc-weekly", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(weekly)
+        });
+
+        const data = await res.json();
+
+        document.getElementById("runOutput").textContent =
+          JSON.stringify(data, null, 2);
+      }
+
       </script>
 
 
