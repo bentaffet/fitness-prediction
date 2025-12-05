@@ -113,24 +113,42 @@
     function summarizeByWeek(runData) {
       if (!runData || runData.length === 0) return [];
 
+      // Sort runs oldest → newest
       const sorted = [...runData].sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-      const startDate = new Date(sorted[0].start_date);
+
+      // Find the first Sunday before or on the first run date
+      const firstDate = new Date(sorted[0].start_date);
+      const firstSunday = new Date(firstDate);
+      firstSunday.setDate(firstDate.getDate() - firstDate.getDay()); // 0 = Sunday
 
       function getWeekNumber(d) {
-        const diffMs = new Date(d) - startDate;
+        const diffMs = new Date(d) - firstSunday;
         return Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
       }
 
+      function formatWeekRange(weekNum) {
+        const start = new Date(firstSunday);
+        start.setDate(start.getDate() + (weekNum - 1) * 7);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 6);
+        const pad = n => n.toString().padStart(2, '0');
+        return `${pad(start.getMonth()+1)}/${pad(start.getDate())} - ${pad(end.getMonth()+1)}/${pad(end.getDate())}`;
+      }
+
       const weeks = {};
+
       sorted.forEach(run => {
         const week = getWeekNumber(run.start_date);
         if (!weeks[week]) {
           weeks[week] = { totalDistMiles:0, totalTimeMin:0, weightedHrSum:0, totalHrWeight:0 };
         }
+
         const miles = run.distance_m / 1609.34;
         const minutes = run.moving_time_s / 60;
+
         weeks[week].totalDistMiles += miles;
         weeks[week].totalTimeMin += minutes;
+
         if (run.average_heartrate !== null) {
           weeks[week].weightedHrSum += run.average_heartrate * miles;
           weeks[week].totalHrWeight += miles;
@@ -142,16 +160,20 @@
         const w = weeks[week];
         const avgHr = w.totalHrWeight > 0 ? w.weightedHrSum / w.totalHrWeight : null;
         const pace = w.totalDistMiles > 0 ? w.totalTimeMin / w.totalDistMiles : null;
+
         result.push({
           week: Number(week),
+          week_range: formatWeekRange(week), // new field
           distance: w.totalDistMiles,
           time: w.totalTimeMin,
           heartrate: avgHr,
           pace: pace
         });
       }
+
       return result;
     }
+
 
     /* -----------------------------
        Compute Weekly Summary (Backend)
@@ -178,13 +200,14 @@
       plotModeledFitness(data);
     }
 
+   
     /* -----------------------------
-       Plot Modeled Fitness
+      Plot Modeled Fitness with Week Range
     ------------------------------ */
     function plotModeledFitness(data) {
       if (!data || data.length === 0) return;
 
-      const labels = data.map(w => `Week ${w.week}`);
+      const labels = data.map(w => w.week_range || `Week ${w.week}`); // use week_range if available
       const values = data.map(w => w.modeledfitness);
 
       const ctx = document.getElementById('fitnessChart').getContext('2d');
@@ -212,12 +235,16 @@
             title: { display: true, text: 'Modeled Fitness Over Weeks' }
           },
           scales: {
-            x: { title: { display: true, text: 'Week' } },
+            x: {
+              title: { display: true, text: 'Week Range' },
+              ticks: { maxRotation: 45, minRotation: 30 } // rotate for readability
+            },
             y: { title: { display: true, text: 'Modeled Fitness' } }
           }
         }
       });
     }
+
   </script>
 
 </body>
