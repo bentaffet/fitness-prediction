@@ -29,5 +29,8 @@ for all weeks
 
 coeffs = linear_regression(S_FF, [fit, fat])
 
-modeledfitness = 
+modeledfitness = []
+for i in range(N):
+    modeledfitness.append(coeffs[1] * fit[i] + coeffs[2] * fat[i] + coeffs[0])
+
 '''
