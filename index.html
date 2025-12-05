@@ -21,16 +21,6 @@
       color: #333;
     }
 
-    #chartContainer {
-      width: 90%;
-      max-width: 900px;
-      margin-top: 30px;
-      background: #fff;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-
     #instructions {
       width: 90%;
       max-width: 700px;
@@ -40,6 +30,31 @@
       margin-top: 20px;
       border-radius: 8px;
       color: #006064;
+    }
+
+    #chartContainer {
+      width: 90%;
+      max-width: 900px;
+      margin-top: 30px;
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      position: relative;
+    }
+
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255,255,255,0.9);
+      padding: 15px 25px;
+      border-radius: 8px;
+      font-size: 18px;
+      color: #333;
+      display: none;
+      z-index: 10;
     }
 
     #controls {
@@ -90,7 +105,6 @@
 </head>
 
 <body>
-
   <h1>Strava Fitness Predictor</h1>
 
   <div id="instructions">
@@ -98,16 +112,16 @@
     <ol>
       <li>Click "Link Strava" to connect your account.</li>
       <li>After authorizing, your recent runs will be fetched automatically.</li>
-      <li>Ensure Token Validated says "YES"</li>
-      <li>Wait until you see "Fetched x runs"</li>
-      <li>Be patient. If you wait more than 10 seconds it might be broken.</li>
-      <li>Click "Compute Weekly Summary" to calculate modeled fitness for each week.</li>
+      <li>Ensure Token Validated says "YES".</li>
+      <li>Wait until you see "Fetched x runs".</li>
+      <li>Click "Compute Weekly Summary" to calculate modeled fitness.</li>
       <li>Scroll to view the chart and weekly data.</li>
     </ol>
   </div>
 
   <div id="chartContainer">
     <canvas id="fitnessChart"></canvas>
+    <div id="loading">Loading… please wait</div>
   </div>
 
   <div id="controls">
@@ -116,8 +130,6 @@
   </div>
 
   <div id="info">
-    <!-- <div id="authCode"></div>
-    <div id="accessToken"></div> -->
     <div id="validation"></div>
   </div>
 
@@ -126,6 +138,7 @@
   <script>
     let runData = [];
     let fitnessChart;
+    const loadingEl = document.getElementById("loading");
 
     const STRAVA_URL =
       "https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code";
@@ -138,28 +151,33 @@
     const code = params.get("code");
 
     if (code) {
-      document.getElementById("authCode").textContent = "Authorization Code: " + code;
-
+      showLoading(true);
       fetch(`/api/token?code=${code}`)
         .then(res => res.json())
         .then(data => {
+          showLoading(false);
           if (data.access_token) {
-            document.getElementById("accessToken").textContent = "Access Token: " + data.access_token;
             document.getElementById("validation").textContent = "Token Validated: YES";
             fetchRuns(data.access_token);
           } else {
-            document.getElementById("accessToken").textContent = "Access Token: NONE";
             document.getElementById("validation").textContent = "Token Validated: NO";
           }
         })
         .catch(err => {
+          showLoading(false);
           document.getElementById("validation").textContent = "Token Validated: NO (Fetch error: " + err + ")";
         });
     }
 
+    function showLoading(state) {
+      loadingEl.style.display = state ? "block" : "none";
+    }
+
     async function fetchRuns(accessToken) {
+      showLoading(true);
       const res = await fetch(`/api/fetch-runs?access_token=${accessToken}`);
       const data = await res.json();
+      showLoading(false);
       runData = data.runs;
       document.getElementById("runOutput").textContent = `Fetched ${runData.length} runs`;
     }
@@ -171,17 +189,17 @@
       }
 
       const weekly = summarizeByWeek(runData);
+      showLoading(true);
 
       const res = await fetch("/api/calc-weekly", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(weekly)
       });
-
       const data = await res.json();
+      showLoading(false);
 
       document.getElementById("runOutput").textContent = JSON.stringify(data, null, 2);
-
       plotModeledFitness(data);
     }
 
@@ -191,7 +209,7 @@
 
       const firstDate = new Date(sorted[0].start_date);
       const firstMonday = new Date(firstDate);
-      firstMonday.setDate(firstDate.getDate() - ((firstDate.getDay()+6)%7)); // 0=Sun, 1=Mon → align to Monday
+      firstMonday.setDate(firstDate.getDate() - ((firstDate.getDay()+6)%7));
 
       function getWeekNumber(d) {
         return Math.floor((new Date(d) - firstMonday) / (7*24*60*60*1000)) + 1;
@@ -210,10 +228,8 @@
       sorted.forEach(run => {
         const week = getWeekNumber(run.start_date);
         if (!weeks[week]) weeks[week] = { totalDistMiles:0, totalTimeMin:0, weightedHrSum:0, totalHrWeight:0 };
-
         const miles = run.distance_m / 1609.34;
         const minutes = run.moving_time_s / 60;
-
         weeks[week].totalDistMiles += miles;
         weeks[week].totalTimeMin += minutes;
         if (run.average_heartrate !== null) {
@@ -236,7 +252,6 @@
           pace: pace
         });
       }
-
       return result;
     }
 
