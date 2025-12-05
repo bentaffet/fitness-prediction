@@ -9,29 +9,68 @@
 
 <body>
 
-  <button id="stravaBtn">
-    Link Strava
-  </button>
+  <button id="stravaBtn">Link Strava</button>
 
   <div id="authCode" style="margin-top:20px; font-family:monospace;"></div>
+  <div id="accessToken" style="margin-top:20px; font-family:monospace;"></div>
+  <div id="validation" style="margin-top:20px; font-family:monospace;"></div>
 
   <script>
-    // Redirect URL for Strava OAuth
+    /* -----------------------------
+       1. STRAVA AUTHORIZE BUTTON
+    ------------------------------ */
     const STRAVA_URL =
-      "https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code";
+      "https://www.strava.com/oauth/authorize" +
+      "?client_id=185647" +
+      "&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F" +
+      "&approval_prompt=auto" +
+      "&scope=activity%3Aread_all" +
+      "&response_type=code";
 
     document.getElementById("stravaBtn").addEventListener("click", () => {
       window.location.href = STRAVA_URL;
     });
 
-    // Parse ?code= from the redirect URL
+
+    /* -----------------------------
+       2. GET ?code= FROM REDIRECT
+    ------------------------------ */
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
 
-    // Print the code if present
     if (code) {
       document.getElementById("authCode").textContent =
         "Authorization Code: " + code;
+
+      /* -----------------------------
+         3. CALL BACKEND /api/token
+      ------------------------------ */
+      fetch(`/api/token?code=${code}`)
+        .then(res => res.json())
+        .then(data => {
+
+          /* 4. SUCCESS: PRINT TOKEN */
+          if (data.access_token) {
+            document.getElementById("accessToken").textContent =
+              "Access Token: " + data.access_token;
+
+            document.getElementById("validation").textContent =
+              "Token Validated: YES";
+          }
+
+          /* 5. FAILURE: PRINT ERROR */
+          else {
+            document.getElementById("accessToken").textContent =
+              "Access Token: NONE";
+
+            document.getElementById("validation").textContent =
+              "Token Validated: NO (" + (data.error || "Unknown error") + ")";
+          }
+        })
+        .catch(err => {
+          document.getElementById("validation").textContent =
+            "Token Validated: NO (Fetch error: " + err + ")";
+        });
     }
   </script>
 
