@@ -9,22 +9,22 @@
 </head>
 
 <body>
-
+  <canvas id="fitnessChart" width="700" height="400" style="margin-top:20px;"></canvas>
   <button id="stravaBtn">Link Strava</button>
 
   <div id="authCode" style="margin-top:20px; font-family:monospace;"></div>
   <div id="accessToken" style="margin-top:20px; font-family:monospace;"></div>
   <div id="validation" style="margin-top:20px; font-family:monospace;"></div>
 
-  <button onclick="printLastNRuns(10)">Print Last 10 Runs</button>
-  <button onclick="printWeeklySummary()">Print Weekly Summary</button>
+  <!-- <button onclick="printLastNRuns(10)">Print Last 10 Runs</button> -->
+  <!-- <button onclick="printWeeklySummary()">Print Weekly Summary</button> -->
   <button onclick="computeWeeklySummary()">Compute Weekly Summary</button>
 
   <pre id="runOutput"
       style="margin-top:20px; padding:10px; background:#eee; max-width:700px;">
   </pre>
 
-  <canvas id="fitnessChart" width="700" height="400" style="margin-top:20px;"></canvas>
+  
 
   <script>
     let runData = []; // store all fetched runs here
