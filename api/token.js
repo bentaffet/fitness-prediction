@@ -22,21 +22,17 @@ export default async function handler(req, res) {
 
     const data = await tokenResponse.json();
 
-    if (!data.access_token || !data.athlete) {
-      return res.status(400).json({ error: "Invalid token response", details: data });
-    }
-
-    // Connect to MySQL
+    // Connect to MySQL using environment variables
     const connection = await mysql.createConnection({
-      host: "userdata-userdata.b.aivencloud.com",
-      port: 17176,
-      user: "avnadmin",
-      password: "AVNS_Xew9uCMjTJl4eS80bmC",
-      database: "defaultdb",
+      host: process.env.MYSQL_HOST,
+      port: parseInt(process.env.MYSQL_PORT, 10),
+      user: process.env.MYSQL_USER,
+      password: process.env.MYSQL_PASSWORD,
+      database: process.env.MYSQL_DATABASE,
       ssl: { rejectUnauthorized: true },
     });
 
-    // Insert tokens into database
+    // Insert tokens using fixed username "test_user"
     const query = `
       INSERT INTO strava_tokens (athlete_id, access_token, refresh_token, expires_at)
       VALUES (?, ?, ?, ?)
@@ -47,7 +43,7 @@ export default async function handler(req, res) {
     `;
 
     await connection.execute(query, [
-      data.athlete.id,
+      "test_user",
       data.access_token,
       data.refresh_token,
       data.expires_at,
@@ -55,7 +51,8 @@ export default async function handler(req, res) {
 
     await connection.end();
 
-    res.status(200).json({ success: true, data });
+    // Return Strava token JSON (same as original behavior)
+    res.status(200).json(data);
   } catch (err) {
     res.status(500).json({ error: "Server error", details: err.toString() });
   }
