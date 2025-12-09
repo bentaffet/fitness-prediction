@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     const perPage = 100; // max allowed
     let allActivities = [];
 
-    while (allActivities.length < 1500) {
+    while (allActivities.length < 300) {
       const r = await fetch(
         `https://www.strava.com/api/v3/athlete/activities?access_token=${access_token}&page=${page}&per_page=${perPage}`
       );
