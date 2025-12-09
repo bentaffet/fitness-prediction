@@ -1,3 +1,5 @@
+import mysql from "mysql2/promise";
+
 export default async function handler(req, res) {
   try {
     const { code } = req.query;
@@ -6,24 +8,64 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "No code provided" });
     }
 
+    // --- Exchange code for Strava tokens ---
     const tokenResponse = await fetch("https://www.strava.com/oauth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         client_id: process.env.STRAVA_CLIENT_ID,
         client_secret: process.env.STRAVA_CLIENT_SECRET,
-        code: code,
-        grant_type: "authorization_code"
-      })
+        code,
+        grant_type: "authorization_code",
+      }),
     });
 
     const data = await tokenResponse.json();
-
-    // 🔥 This will show up in Vercel logs
     console.log("Strava token response:", data);
 
-    res.status(200).json(data);
+    // Extract values (fallback athlete_id if missing)
+    const athleteId =
+      data?.athlete?.id?.toString() || "test_user"; // <— default value
+    const accessToken = data?.access_token;
+    const refreshToken = data?.refresh_token;
+    const expiresAt = data?.expires_at?.toString();
 
+    if (!accessToken || !refreshToken || !expiresAt) {
+      return res
+        .status(400)
+        .json({ error: "Missing required fields from Strava token response" });
+    }
+
+    // --- Connect to Aiven MySQL ---
+    const connection = await mysql.createConnection({
+      host: process.env.MYSQL_HOST,
+      port: process.env.MYSQL_PORT,
+      user: process.env.MYSQL_USER,
+      password: process.env.MYSQL_PASSWORD,
+      database: process.env.MYSQL_DATABASE,
+      ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : false,
+    });
+
+    // --- UPSERT into strava_tokens ---
+    const query = `
+      INSERT INTO strava_tokens (athlete_id, access_token, refresh_token, expires_at)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        access_token = VALUES(access_token),
+        refresh_token = VALUES(refresh_token),
+        expires_at = VALUES(expires_at)
+    `;
+
+    await connection.execute(query, [
+      athleteId,
+      accessToken,
+      refreshToken,
+      expiresAt,
+    ]);
+
+    console.log(`Stored tokens for athlete: ${athleteId}`);
+
+    res.status(200).json(data);
   } catch (err) {
     console.error("Strava OAuth error:", err);
     res.status(500).json({ error: "Server error", details: err.toString() });
