@@ -12,27 +12,20 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         client_id: process.env.STRAVA_CLIENT_ID,
         client_secret: process.env.STRAVA_CLIENT_SECRET,
-        code,
+        code: code,
         grant_type: "authorization_code"
       })
     });
 
     const data = await tokenResponse.json();
 
-    if (!tokenResponse.ok) {
-      return res.status(400).json({ error: "OAuth error", details: data });
-    }
+    // 🔥 This will show up in Vercel logs
+    console.log("Strava token response:", data);
 
-    // Keep these in variables (you can save them in MySQL later)
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token;
-    const expiresAt = data.expires_at;
-    const expiresIn = data.expires_in;
-
-    // Return ONLY the access token
-    return res.status(200).json({ access_token: accessToken });
+    res.status(200).json(data);
 
   } catch (err) {
-    return res.status(500).json({ error: "Server error", details: err.toString() });
+    console.error("Strava OAuth error:", err);
+    res.status(500).json({ error: "Server error", details: err.toString() });
   }
 }
