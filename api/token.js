@@ -43,7 +43,7 @@ export default async function handler(req, res) {
       user: process.env.MYSQL_USER,
       password: process.env.MYSQL_PASSWORD,
       database: process.env.MYSQL_DATABASE,
-      ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : false,
+      ssl: { rejectUnauthorized: false }
     });
 
     // --- UPSERT into strava_tokens ---
