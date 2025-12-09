@@ -12,15 +12,27 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         client_id: process.env.STRAVA_CLIENT_ID,
         client_secret: process.env.STRAVA_CLIENT_SECRET,
-        code: code,
+        code,
         grant_type: "authorization_code"
       })
     });
 
     const data = await tokenResponse.json();
-    res.status(200).json(data);
+
+    if (!tokenResponse.ok) {
+      return res.status(400).json({ error: "OAuth error", details: data });
+    }
+
+    // Keep these in variables (you can save them in MySQL later)
+    const accessToken = data.access_token;
+    const refreshToken = data.refresh_token;
+    const expiresAt = data.expires_at;
+    const expiresIn = data.expires_in;
+
+    // Return ONLY the access token
+    return res.status(200).json({ access_token: accessToken });
 
   } catch (err) {
-    res.status(500).json({ error: "Server error", details: err.toString() });
+    return res.status(500).json({ error: "Server error", details: err.toString() });
   }
 }
