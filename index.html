@@ -143,52 +143,120 @@
     const STRAVA_URL =
       "https://www.strava.com/oauth/authorize?client_id=185647&redirect_uri=https%3A%2F%2Ffitness-prediction.vercel.app%2F&approval_prompt=auto&scope=activity%3Aread_all&response_type=code";
 
+    console.log("📌 Page loaded.");
+
     document.getElementById("stravaBtn").addEventListener("click", () => {
+      console.log("➡️ Redirecting to Strava OAuth URL:", STRAVA_URL);
       window.location.href = STRAVA_URL;
     });
 
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
 
+    console.log("🔍 URLSearchParams:", [...params.entries()]);
+    console.log("🔍 OAuth Code:", code);
+
     if (code) {
       showLoading(true);
+      console.log("➡️ Exchanging code for token…");
+
       fetch(`/api/token?code=${code}`)
-        .then(res => res.json())
+        .then(async res => {
+          console.log("🔎 /api/token HTTP status:", res.status);
+          const txt = await res.text();
+
+          console.log("📥 /api/token raw response:", txt);
+
+          try {
+            return JSON.parse(txt);
+          } catch (e) {
+            console.error("❌ JSON parse error on /api/token:", e);
+            throw new Error("Invalid JSON response from /api/token");
+          }
+        })
         .then(data => {
           showLoading(false);
+          console.log("📦 Parsed /api/token data:", data);
+
           if (data.access_token) {
             document.getElementById("validation").textContent = "Token Validated: YES";
             fetchRuns(data.access_token);
           } else {
-            document.getElementById("validation").textContent = "Token Validated: NO";
+            document.getElementById("validation").textContent = "Token Validated: NO (Missing access_token)";
           }
         })
         .catch(err => {
           showLoading(false);
-          document.getElementById("validation").textContent = "Token Validated: NO (Fetch error: " + err + ")";
+          console.error("❌ Token exchange error:", err);
+          document.getElementById("validation").textContent =
+            "Token Validated: NO (Fetch error: " + err + ")";
         });
+    } else {
+      console.warn("⚠️ No OAuth code found — user has not authenticated yet.");
     }
 
     function showLoading(state) {
+      console.log("⏳ Loading:", state);
       loadingEl.style.display = state ? "block" : "none";
     }
 
     async function fetchRuns(accessToken) {
+      console.log("➡️ Fetching runs with token:", accessToken.slice(0, 8) + "…");
+
       showLoading(true);
-      const res = await fetch(`/api/fetch-runs?access_token=${accessToken}`);
-      const data = await res.json();
-      showLoading(false);
-      runData = data.runs;
-      document.getElementById("runOutput").textContent = `Fetched ${runData.length} runs`;
+
+      try {
+        const res = await fetch(`/api/fetch-runs?access_token=${accessToken}`);
+        console.log("🔎 /api/fetch-runs HTTP status:", res.status);
+
+        const txt = await res.text();
+        console.log("📥 /api/fetch-runs raw response:", txt);
+
+        let data;
+        try {
+          data = JSON.parse(txt);
+        } catch (e) {
+          console.error("❌ JSON parse error on /api/fetch-runs:", e);
+          showLoading(false);
+          document.getElementById("runOutput").textContent =
+            "Error parsing run data JSON.";
+          return;
+        }
+
+        showLoading(false);
+
+        console.log("📦 Parsed run data:", data);
+
+        runData = data.runs || [];
+        console.log("🏃 Run array:", runData);
+
+        if (runData.length === 0) {
+          console.warn("⚠️ No runs returned from the API.");
+        }
+
+        document.getElementById("runOutput").textContent =
+          `Fetched ${runData.length} runs\n\n` + JSON.stringify(runData, null, 2);
+
+      } catch (err) {
+        showLoading(false);
+        console.error("❌ Error fetching runs:", err);
+        document.getElementById("runOutput").textContent =
+          "Error fetching runs: " + err;
+      }
     }
 
     async function computeWeeklySummary() {
+      console.log("➡️ Computing weekly summary…");
+
       if (!runData || runData.length === 0) {
+        console.error("❌ computeWeeklySummary() called with no runData");
         document.getElementById("runOutput").textContent = "No run data loaded yet.";
         return;
       }
 
       const weekly = summarizeByWeek(runData);
+      console.log("📊 Weekly summary:", weekly);
+
       showLoading(true);
 
       const res = await fetch("/api/calc-weekly", {
@@ -196,42 +264,65 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(weekly)
       });
-      const data = await res.json();
+
+      const txt = await res.text();
+      console.log("📥 /api/calc-weekly raw response:", txt);
+
+      let data;
+      try {
+        data = JSON.parse(txt);
+      } catch (e) {
+        console.error("❌ JSON parse error /api/calc-weekly:", e);
+        showLoading(false);
+        return;
+      }
+
       showLoading(false);
 
+      console.log("📦 Modeled fitness:", data);
+
       document.getElementById("runOutput").textContent = JSON.stringify(data, null, 2);
+
       plotModeledFitness(data);
     }
 
     function summarizeByWeek(runData) {
-      if (!runData || runData.length === 0) return [];
-      const sorted = [...runData].sort((a,b) => new Date(a.start_date) - new Date(b.start_date));
+      console.log("➡️ summarizeByWeek() received", runData.length, "runs.");
+
+      if (!runData || runData.length === 0) {
+        console.error("❌ summarizeByWeek() empty runData");
+        return [];
+      }
+
+      const sorted = [...runData].sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+      console.log("📌 Earliest run:", sorted[0]);
 
       const firstDate = new Date(sorted[0].start_date);
       const firstMonday = new Date(firstDate);
-      firstMonday.setDate(firstDate.getDate() - ((firstDate.getDay()+6)%7));
-
-      function getWeekNumber(d) {
-        return Math.floor((new Date(d) - firstMonday) / (7*24*60*60*1000)) + 1;
-      }
-
-      function formatWeekRange(weekNum) {
-        const start = new Date(firstMonday);
-        start.setDate(start.getDate() + (weekNum-1)*7);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 6);
-        const pad = n => n.toString().padStart(2,'0');
-        return `${pad(start.getMonth()+1)}/${pad(start.getDate())} - ${pad(end.getMonth()+1)}/${pad(end.getDate())}`;
-      }
+      firstMonday.setDate(firstDate.getDate() - ((firstDate.getDay() + 6) % 7));
 
       const weeks = {};
+
+      sorted.forEach((run, idx) => {
+        if (!run.start_date) {
+          console.warn(`⚠️ run[${idx}] missing start_date:`, run);
+          return;
+        }
+      });
+
       sorted.forEach(run => {
-        const week = getWeekNumber(run.start_date);
-        if (!weeks[week]) weeks[week] = { totalDistMiles:0, totalTimeMin:0, weightedHrSum:0, totalHrWeight:0 };
+        const week = Math.floor((new Date(run.start_date) - firstMonday) / (7*24*60*60*1000)) + 1;
+
+        if (!weeks[week]) {
+          weeks[week] = { totalDistMiles:0, totalTimeMin:0, weightedHrSum:0, totalHrWeight:0 };
+        }
+
         const miles = run.distance_m / 1609.34;
         const minutes = run.moving_time_s / 60;
+
         weeks[week].totalDistMiles += miles;
         weeks[week].totalTimeMin += minutes;
+
         if (run.average_heartrate !== null) {
           weeks[week].weightedHrSum += run.average_heartrate * miles;
           weeks[week].totalHrWeight += miles;
@@ -239,29 +330,45 @@
       });
 
       const result = [];
+
       for (const week in weeks) {
         const w = weeks[week];
         const avgHr = w.totalHrWeight > 0 ? w.weightedHrSum / w.totalHrWeight : null;
         const pace = w.totalDistMiles > 0 ? w.totalTimeMin / w.totalDistMiles : null;
+
         result.push({
           week: Number(week),
-          week_range: formatWeekRange(week),
           distance: w.totalDistMiles,
           time: w.totalTimeMin,
           heartrate: avgHr,
           pace: pace
         });
       }
+
+      console.log("📦 Final weekly summary:", result);
       return result;
     }
 
     function plotModeledFitness(data) {
-      if (!data || data.length === 0) return;
+      console.log("📈 Plotting fitness chart…");
+
+      if (!data || data.length === 0) {
+        console.error("❌ No data for plotModeledFitness()");
+        return;
+      }
+
       const labels = data.map(w => w.week_range || `Week ${w.week}`);
       const values = data.map(w => w.modeledfitness);
 
+      console.log("📊 Fitness labels:", labels);
+      console.log("📊 Fitness values:", values);
+
       const ctx = document.getElementById('fitnessChart').getContext('2d');
-      if (fitnessChart) fitnessChart.destroy();
+
+      if (fitnessChart) {
+        console.log("🗑️ Destroying previous chart instance");
+        fitnessChart.destroy();
+      }
 
       fitnessChart = new Chart(ctx, {
         type: 'line',
@@ -276,21 +383,13 @@
             fill: true,
             pointRadius: 4
           }]
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: true },
-            title: { display: true, text: 'Modeled Fitness Over Weeks' }
-          },
-          scales: {
-            x: { title: { display: true, text: 'Week Range' }, ticks: { maxRotation: 45, minRotation: 30 } },
-            y: { title: { display: true, text: 'Modeled Fitness' } }
-          }
         }
       });
+
+      console.log("✅ Chart rendered.");
     }
   </script>
+
 
 </body>
 </html>
