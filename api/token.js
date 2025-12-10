@@ -23,17 +23,27 @@ export default async function handler(req, res) {
     const data = await tokenResponse.json();
     console.log("Strava token response:", data);
 
-    // Extract values (fallback athlete_id if missing)
-    const athleteId =
-      data?.athlete?.id?.toString() || "test_user"; // <— default value
+    // ---- Create athlete_id = firstname.lastname ----
+    const firstname = data?.athlete?.firstname || "";
+    const lastname = data?.athlete?.lastname || "";
+
+    const athleteId = `${firstname}.${lastname}`
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ""); // remove spaces
+
+    if (!firstname || !lastname) {
+      console.warn("⚠️ Missing firstname/lastname in Strava response.");
+    }
+
     const accessToken = data?.access_token;
     const refreshToken = data?.refresh_token;
     const expiresAt = data?.expires_at?.toString();
 
     if (!accessToken || !refreshToken || !expiresAt) {
-      return res
-        .status(400)
-        .json({ error: "Missing required fields from Strava token response" });
+      return res.status(400).json({
+        error: "Missing required fields from Strava token response",
+      });
     }
 
     // --- Connect to Aiven MySQL ---
@@ -43,7 +53,7 @@ export default async function handler(req, res) {
       user: process.env.MYSQL_USER,
       password: process.env.MYSQL_PASSWORD,
       database: process.env.MYSQL_DATABASE,
-      ssl: { rejectUnauthorized: false }
+      ssl: { rejectUnauthorized: false },
     });
 
     // --- UPSERT into strava_tokens ---
