@@ -1,111 +1,42 @@
-import mysql from "mysql2/promise";
-
 export default async function handler(req, res) {
-  console.log("🚀 /api/exchange-token HIT");
+  const { access_token } = req.query;
+
+  if (!access_token) {
+    return res.status(400).json({ error: "Missing access token" });
+  }
 
   try {
-    const { code } = req.query;
-    console.log("Incoming code:", code);
+    let page = 1;
+    const perPage = 100; // max allowed
+    let allActivities = [];
 
-    if (!code) {
-      console.error("❌ No code provided");
-      return res.status(400).json({ error: "No code provided" });
+    while (allActivities.length < 300) {
+      const r = await fetch(
+        `https://www.strava.com/api/v3/athlete/activities?access_token=${access_token}&page=${page}&per_page=${perPage}`
+      );
+      const batch = await r.json();
+
+      if (!Array.isArray(batch) || batch.length === 0) break;
+
+      allActivities = allActivities.concat(batch);
+      page += 1;
     }
 
-    // ------------------------------------------
-    // 1. Request Strava tokens
-    // ------------------------------------------
-    console.log("🔁 Requesting tokens from Strava...");
+    // Filter only runs + required fields
+    const runs = allActivities
+      .filter(act => act.type === "Run")
+      .map(act => ({
+        distance_m: act.distance,
+        moving_time_s: act.moving_time,
+        start_date: act.start_date,
+        average_heartrate: act.hasOwnProperty("average_heartrate")
+          ? act.average_heartrate
+          : null
+      }));
 
-    const tokenResponse = await fetch("https://www.strava.com/oauth/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: process.env.STRAVA_CLIENT_ID,
-        client_secret: process.env.STRAVA_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code"
-      })
-    });
-
-    console.log("Strava response status:", tokenResponse.status);
-
-    const data = await tokenResponse.json();
-    console.log("Strava response body:", JSON.stringify(data, null, 2));
-
-    if (!tokenResponse.ok) {
-      console.error("❌ OAuth exchange failed:", data);
-      return res.status(400).json({ error: "OAuth error", details: data });
-    }
-
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token;
-    const expiresAt = data.expires_at;
-    const athleteId = "test_user";
-
-    console.log("Tokens received:");
-    console.log("  access_token:  ", accessToken?.slice(0, 6) + "...");
-    console.log("  refresh_token: ", refreshToken?.slice(0, 6) + "...");
-    console.log("  expires_at:    ", expiresAt);
-
-    // ------------------------------------------
-    // 2. Connect to MySQL
-    // ------------------------------------------
-    console.log("🛢 Connecting to MySQL with env vars:");
-    console.log({
-      MYSQL_HOST: process.env.MYSQL_HOST,
-      MYSQL_PORT: process.env.MYSQL_PORT,
-      MYSQL_USER: process.env.MYSQL_USER,
-      MYSQL_DATABASE: process.env.MYSQL_DATABASE,
-      MYSQL_SSL: process.env.MYSQL_SSL
-    });
-
-    const connection = await mysql.createConnection({
-      host: process.env.MYSQL_HOST,
-      port: Number(process.env.MYSQL_PORT),
-      user: process.env.MYSQL_USER,
-      password: process.env.MYSQL_PASSWORD,
-      database: process.env.MYSQL_DATABASE,
-      ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : false
-    });
-
-    console.log("✅ MySQL connected");
-
-    // ------------------------------------------
-    // 3. Insert/update token row
-    // ------------------------------------------
-    console.log("📝 Inserting/updating token row...");
-
-    const sql = `
-      INSERT INTO strava_tokens (athlete_id, access_token, refresh_token, expires_at)
-      VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        access_token = VALUES(access_token),
-        refresh_token = VALUES(refresh_token),
-        expires_at = VALUES(expires_at);
-    `;
-
-    const params = [athleteId, accessToken, refreshToken, expiresAt];
-
-    console.log("SQL Params:", { athleteId, expiresAt });
-
-    const [result] = await connection.execute(sql, params);
-    console.log("MySQL result:", result);
-
-    await connection.end();
-    console.log("🔌 MySQL connection closed");
-
-    // ------------------------------------------
-    // 4. Return access token
-    // ------------------------------------------
-    console.log("✅ Returning access token to client");
-    return res.status(200).json({ access_token: accessToken });
+    res.status(200).json({ count: runs.length, runs });
 
   } catch (err) {
-    console.error("💥 SERVER ERROR:", err);
-    return res.status(500).json({
-      error: "Server error",
-      details: err.toString()
-    });
+    res.status(500).json({ error: "Server error", details: err.toString() });
   }
 }
