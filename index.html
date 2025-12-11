@@ -342,14 +342,22 @@
         const avgHr = w.totalHrWeight > 0 ? w.weightedHrSum / w.totalHrWeight : null;
         const pace = w.totalDistMiles > 0 ? w.totalTimeMin / w.totalDistMiles : null;
 
+        // format to YYYY-MM-DD
+        const weekStartStr = w.week_start.toISOString().slice(0, 10);
+        const weekEndStr = w.week_end.toISOString().slice(0, 10);
+
         result.push({
           week: Number(week),
           distance: w.totalDistMiles,
           time: w.totalTimeMin,
           heartrate: avgHr,
-          pace: pace
+          pace: pace,
+          week_start: weekStartStr,
+          week_end: weekEndStr,
+          week_range: `${weekStartStr} – ${weekEndStr}`
         });
       }
+
 
       console.log("📦 Final weekly summary:", result);
       return result;
