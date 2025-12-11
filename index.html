@@ -33,7 +33,7 @@
     }
 
     #chartContainer {
-      width: 90%;
+      width: 100%;
       max-width: 900px;
       margin-top: 30px;
       background: #fff;
@@ -41,6 +41,12 @@
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
       position: relative;
+    }
+
+    #chartContainer canvas {
+      width: 100% !important;
+      height: auto !important;
+      max-height: 60vh; /* prevents flattening on mobile */
     }
 
     #loading {
