@@ -295,56 +295,86 @@
     function summarizeByWeek(runData) {
       console.log("➡️ summarizeByWeek() received", runData.length, "runs.");
 
-      if (!runData || runData.length === 0) {
-        console.error("❌ summarizeByWeek() empty runData");
+      if (!runData || runData.length === 0) return [];
+
+      // Sort by date
+      const sorted = [...runData].sort(
+        (a, b) => new Date(a.start_date) - new Date(b.start_date)
+      );
+
+      // Get earliest date
+      const firstDate = new Date(sorted[0].start_date);
+
+      if (isNaN(firstDate)) {
+        console.error("❌ Invalid earliest date:", sorted[0].start_date);
         return [];
       }
 
-      const sorted = [...runData].sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
-      console.log("📌 Earliest run:", sorted[0]);
-
-      const firstDate = new Date(sorted[0].start_date);
+      // Compute first Monday (start of week 1)
       const firstMonday = new Date(firstDate);
-      firstMonday.setDate(firstDate.getDate() - ((firstDate.getDay() + 6) % 7));
+      firstMonday.setHours(0, 0, 0, 0);
+      firstMonday.setDate(firstMonday.getDate() - ((firstMonday.getDay() + 6) % 7));
 
       const weeks = {};
 
-      sorted.forEach((run, idx) => {
-        if (!run.start_date) {
-          console.warn(`⚠️ run[${idx}] missing start_date:`, run);
-          return;
-        }
-      });
+      for (const run of sorted) {
+        if (!run.start_date) continue;
 
-      sorted.forEach(run => {
-        const week = Math.floor((new Date(run.start_date) - firstMonday) / (7*24*60*60*1000)) + 1;
+        const d = new Date(run.start_date);
+        if (isNaN(d)) continue;
 
-        if (!weeks[week]) {
-          weeks[week] = { totalDistMiles:0, totalTimeMin:0, weightedHrSum:0, totalHrWeight:0 };
+        const weekNumber =
+          Math.floor((d - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1;
+
+        if (!weeks[weekNumber]) {
+          const weekStart = new Date(firstMonday);
+          weekStart.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+
+          weeks[weekNumber] = {
+            totalDistMiles: 0,
+            totalTimeMin: 0,
+            weightedHrSum: 0,
+            totalHrWeight: 0,
+            week_start: weekStart,
+            week_end: weekEnd
+          };
         }
+
+        const w = weeks[weekNumber];
 
         const miles = run.distance_m / 1609.34;
         const minutes = run.moving_time_s / 60;
 
-        weeks[week].totalDistMiles += miles;
-        weeks[week].totalTimeMin += minutes;
+        w.totalDistMiles += miles;
+        w.totalTimeMin += minutes;
 
         if (run.average_heartrate !== null) {
-          weeks[week].weightedHrSum += run.average_heartrate * miles;
-          weeks[week].totalHrWeight += miles;
+          w.weightedHrSum += run.average_heartrate * miles;
+          w.totalHrWeight += miles;
         }
-      });
+      }
 
+      // Convert to final array format
       const result = [];
 
       for (const week in weeks) {
         const w = weeks[week];
-        const avgHr = w.totalHrWeight > 0 ? w.weightedHrSum / w.totalHrWeight : null;
-        const pace = w.totalDistMiles > 0 ? w.totalTimeMin / w.totalDistMiles : null;
 
-        // format to YYYY-MM-DD
-        const weekStartStr = w.week_start.toISOString().slice(0, 10);
-        const weekEndStr = w.week_end.toISOString().slice(0, 10);
+        const avgHr =
+          w.totalHrWeight > 0
+            ? w.weightedHrSum / w.totalHrWeight
+            : null;
+
+        const pace =
+          w.totalDistMiles > 0
+            ? w.totalTimeMin / w.totalDistMiles
+            : null;
+
+        const ws = w.week_start.toISOString().slice(0, 10);
+        const we = w.week_end.toISOString().slice(0, 10);
 
         result.push({
           week: Number(week),
@@ -352,16 +382,16 @@
           time: w.totalTimeMin,
           heartrate: avgHr,
           pace: pace,
-          week_start: weekStartStr,
-          week_end: weekEndStr,
-          week_range: `${weekStartStr} – ${weekEndStr}`
+          week_start: ws,
+          week_end: we,
+          week_range: `${ws} – ${we}`
         });
       }
-
 
       console.log("📦 Final weekly summary:", result);
       return result;
     }
+
 
     function plotModeledFitness(data) {
       console.log("📈 Plotting fitness chart…");
